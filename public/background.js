@@ -1,4 +1,3 @@
-
 let isRecording = false;
 let startTime = 0;
 let isPaused = false;
@@ -50,22 +49,16 @@ async function requestMicrophonePermission() {
 
 async function startRecording(type) {
   try {
-    // Get active tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) {
-      throw new Error('No active tab found');
-    }
-
-    // Check if we can access the tab
-    const url = new URL(tab.url);
-    if (!url.protocol.startsWith('http')) {
-      throw new Error('Recording is only supported on web pages');
-    }
-
-    // Request microphone permission
+    // Request microphone permission first
     const hasMicPermission = await requestMicrophonePermission();
     if (!hasMicPermission) {
       throw new Error('Microphone permission denied');
+    }
+
+    // Initialize recording in the content script
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      throw new Error('No active tab found');
     }
 
     // Inject content script
@@ -74,7 +67,7 @@ async function startRecording(type) {
       files: ['content-script.js']
     });
 
-    // Request recording start from content script
+    // Start recording
     const response = await chrome.tabs.sendMessage(tab.id, { 
       type: 'START_RECORDING',
       recordingType: type
@@ -84,10 +77,10 @@ async function startRecording(type) {
       throw new Error(response?.error || 'Failed to start recording');
     }
 
-    // Initialize state
     recordingType = type;
     startTime = Date.now();
     isPaused = false;
+    isRecording = true;
     updateBadge();
     sendState();
   } catch (error) {
@@ -185,25 +178,20 @@ async function cancelRecording() {
 function cleanup() {
   startTime = 0;
   isPaused = false;
+  isRecording = false;
   recordingType = null;
   updateBadge();
   sendState();
 }
 
-// Listen for messages from content script
-chrome.runtime.onMessage.addListener((message) => {
-  switch (message.type) {
-    case 'RECORDING_STARTED':
-      isRecording = true;
-      updateBadge();
-      break;
-    case 'RECORDING_STOPPED':
-    case 'RECORDING_CANCELLED':
-      isRecording = false;
-      updateBadge();
-      break;
+function updateBadge() {
+  if (isRecording) {
+    chrome.action.setBadgeText({ text: '🎤' });
+    chrome.action.setBadgeBackgroundColor({ color: '#FF0000' });
+  } else {
+    chrome.action.setBadgeText({ text: '' });
   }
-});
+}
 
 function sendState() {
   if (port) {
@@ -216,15 +204,6 @@ function sendState() {
         recordingType
       }
     });
-  }
-}
-
-function updateBadge() {
-  if (isRecording) {
-    chrome.action.setBadgeText({ text: '🎤' });
-    chrome.action.setBadgeBackgroundColor({ color: '#FF0000' });
-  } else {
-    chrome.action.setBadgeText({ text: '' });
   }
 }
 

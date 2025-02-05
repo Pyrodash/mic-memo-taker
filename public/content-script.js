@@ -1,14 +1,14 @@
+
 let mediaRecorder = null;
 let audioChunks = [];
 
-// Listen for messages from the background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
     case 'START_RECORDING':
-      startRecording(message.recordingType)
+      startRecording()
         .then(() => sendResponse({ success: true }))
         .catch(error => sendResponse({ success: false, error: error.message }));
-      return true; // Required for async response
+      return true;
 
     case 'STOP_RECORDING':
       stopRecording()
@@ -33,21 +33,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-async function startRecording(type) {
+async function startRecording() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream, {
-      mimeType: 'audio/webm'
-    });
+    mediaRecorder = new MediaRecorder(stream);
     audioChunks = [];
 
     mediaRecorder.ondataavailable = (event) => {
       audioChunks.push(event.data);
-      // Send chunk to background script
-      chrome.runtime.sendMessage({
-        type: 'AUDIO_DATA',
-        data: event.data
-      });
     };
 
     mediaRecorder.start(1000);
