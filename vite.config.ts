@@ -1,3 +1,4 @@
+
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
@@ -23,6 +24,7 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       input: {
         index: path.resolve(__dirname, 'index.html'),
+        background: path.resolve(__dirname, 'public/background.js')
       },
       output: {
         entryFileNames: '[name].js',
