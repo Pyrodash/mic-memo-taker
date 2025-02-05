@@ -79,6 +79,7 @@ export const stopRecording = async () => {
       try {
         const webhookUrl = await chrome.storage.local.get('webhookUrl');
         if (webhookUrl.webhookUrl) {
+          // Create a File object with explicit MIME type
           const audioFile = new File([response.blob], "recording.webm", { 
             type: "audio/webm;codecs=opus"
           });
@@ -86,14 +87,24 @@ export const stopRecording = async () => {
           const formData = new FormData();
           formData.append('audio', audioFile);
 
+          // Log the file details before sending
+          console.log('Sending file:', {
+            size: audioFile.size,
+            type: audioFile.type,
+            name: audioFile.name
+          });
+
           const uploadResponse = await fetch(`${webhookUrl.webhookUrl}?route=${recordingState.recordingType}`, {
             method: 'POST',
             body: formData,
           });
 
           if (!uploadResponse.ok) {
-            throw new Error('Failed to upload recording');
+            throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
           }
+
+          const responseData = await uploadResponse.text();
+          console.log('Upload response:', responseData);
         }
       } catch (error) {
         console.error('Error uploading recording:', error);

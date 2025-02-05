@@ -38,37 +38,36 @@ async function startRecording() {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         channelCount: 1,
-        sampleRate: 48000,
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
+        sampleRate: 44100,
       }
     });
 
-    // Force the audio context sample rate to match our desired rate
-    const audioContext = new AudioContext({ sampleRate: 48000 });
-    const source = audioContext.createMediaStreamSource(stream);
-    const destination = audioContext.createMediaStreamDestination();
-    source.connect(destination);
+    // Create MediaRecorder with specific MIME type and codec
+    const options = {
+      mimeType: 'audio/webm;codecs=opus',
+      bitsPerSecond: 128000
+    };
 
-    mediaRecorder = new MediaRecorder(destination.stream, {
-      mimeType: 'audio/webm',
-      audioBitsPerSecond: 256000 // Increased bitrate for better quality
-    });
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+      throw new Error(`MIME type ${options.mimeType} is not supported`);
+    }
 
+    mediaRecorder = new MediaRecorder(stream, options);
     audioChunks = [];
 
+    // Handle data available event
     mediaRecorder.ondataavailable = (event) => {
-      if (event.data && event.data.size > 0) {
+      if (event.data.size > 0) {
         audioChunks.push(event.data);
-        console.log('Chunk received:', event.data.size, 'bytes');
+        console.log(`Chunk collected: ${event.data.size} bytes`);
       }
     };
 
-    // Request smaller chunks more frequently
-    mediaRecorder.start(500);
-    console.log('Recording started with AudioContext processing');
+    // Collect data every 1 second to ensure continuous recording
+    mediaRecorder.start(1000);
+    console.log('Recording started');
     return true;
+
   } catch (error) {
     console.error('Error starting recording:', error);
     cleanup();
@@ -84,41 +83,43 @@ function stopRecording() {
       return;
     }
 
-    mediaRecorder.onstop = () => {
-      console.log('Recording stopped, processing chunks...');
-      
-      if (audioChunks.length === 0) {
+    mediaRecorder.onstop = async () => {
+      try {
+        console.log(`Collected ${audioChunks.length} chunks`);
+
+        if (audioChunks.length === 0) {
+          cleanup();
+          reject(new Error('No audio data recorded'));
+          return;
+        }
+
+        // Create blob with proper MIME type
+        const audioBlob = new Blob(audioChunks, {
+          type: 'audio/webm;codecs=opus'
+        });
+
+        console.log(`Final blob size: ${audioBlob.size} bytes`);
+
+        // Verify blob size and content
+        if (audioBlob.size < 1000) {
+          cleanup();
+          reject(new Error('Recording too short or no audio captured'));
+          return;
+        }
+
         cleanup();
-        reject(new Error('No audio data recorded'));
-        return;
-      }
+        resolve(audioBlob);
 
-      // Create blob from chunks
-      const finalBlob = new Blob(audioChunks, { type: 'audio/webm' });
-      console.log('Final blob size:', finalBlob.size, 'bytes');
-
-      if (finalBlob.size < 1000) {
+      } catch (error) {
+        console.error('Error processing audio:', error);
         cleanup();
-        reject(new Error('Recording too short or no audio captured'));
-        return;
+        reject(error);
       }
-
-      cleanup();
-      resolve(finalBlob);
     };
 
-    try {
-      if (mediaRecorder.state === 'recording') {
-        mediaRecorder.requestData();
-        mediaRecorder.stop();
-      } else {
-        cleanup();
-        reject(new Error('MediaRecorder not in recording state'));
-      }
-    } catch (error) {
-      cleanup();
-      reject(error);
-    }
+    // Ensure we get the last chunk of data
+    mediaRecorder.requestData();
+    mediaRecorder.stop();
   });
 }
 
@@ -147,8 +148,7 @@ function cleanup() {
         mediaRecorder.stop();
       }
       if (mediaRecorder.stream) {
-        const tracks = mediaRecorder.stream.getTracks();
-        tracks.forEach(track => track.stop());
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
       }
     } catch (error) {
       console.error('Error during cleanup:', error);
