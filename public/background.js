@@ -36,6 +36,18 @@ async function handleMessage(msg) {
   }
 }
 
+async function requestMicrophonePermission() {
+  try {
+    const result = await chrome.permissions.request({
+      permissions: ['microphone']
+    });
+    return result;
+  } catch (error) {
+    console.error('Error requesting microphone permission:', error);
+    return false;
+  }
+}
+
 async function startRecording(type) {
   try {
     // Get active tab
@@ -48,6 +60,12 @@ async function startRecording(type) {
     const url = new URL(tab.url);
     if (!url.protocol.startsWith('http')) {
       throw new Error('Recording is only supported on web pages');
+    }
+
+    // Request microphone permission
+    const hasMicPermission = await requestMicrophonePermission();
+    if (!hasMicPermission) {
+      throw new Error('Microphone permission denied');
     }
 
     // Inject content script
