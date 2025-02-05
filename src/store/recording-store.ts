@@ -18,6 +18,8 @@ interface RecordingState {
   setState: (state: Partial<RecordingState>) => void;
 }
 
+const isChromeExtension = typeof chrome !== 'undefined' && chrome.storage && chrome.runtime;
+
 export const useRecordingStore = create<RecordingState>((set, get) => ({
   isRecording: false,
   isPaused: false,
@@ -27,11 +29,17 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   port: null,
 
   setWebhookUrl: async (url) => {
-    await chrome.storage.local.set({ webhookUrl: url });
+    if (isChromeExtension) {
+      await chrome.storage.local.set({ webhookUrl: url });
+    }
     set({ webhookUrl: url });
   },
 
   startRecording: async (type) => {
+    if (!isChromeExtension) {
+      console.warn('Recording is only available in Chrome extension context');
+      return;
+    }
     let port = get().port;
     if (!port) {
       port = chrome.runtime.connect();
@@ -85,7 +93,6 @@ function setupPortListeners(port: chrome.runtime.Port, set: any) {
         set(msg.state);
         break;
       case 'ERROR':
-        // Handle error (you could use the toast here)
         console.error('Recording error:', msg.error);
         break;
     }
@@ -96,8 +103,8 @@ function setupPortListeners(port: chrome.runtime.Port, set: any) {
   });
 }
 
-// Initialize connection and state
-if (typeof chrome !== 'undefined' && chrome.runtime) {
+// Initialize connection and state only if in Chrome extension context
+if (isChromeExtension) {
   const port = chrome.runtime.connect();
   setupPortListeners(port, useRecordingStore.setState);
   port.postMessage({ type: 'GET_STATE' });
