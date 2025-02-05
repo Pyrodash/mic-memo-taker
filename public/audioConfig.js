@@ -4,7 +4,7 @@ export const AUDIO_CONSTRAINTS = {
   echoCancellation: true,
   noiseSuppression: true,
   autoGainControl: true,
-  sampleRate: 44100
+  sampleRate: 48000
 };
 
 export const RECORDER_OPTIONS = {
@@ -12,4 +12,5 @@ export const RECORDER_OPTIONS = {
   audioBitsPerSecond: 128000
 };
 
-export const CHUNK_INTERVAL = 1000; // Increased for better stability
+export const CHUNK_INTERVAL = 2000; // Increased for better stability
+

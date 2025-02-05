@@ -1,4 +1,3 @@
-
 import { AUDIO_CONSTRAINTS, RECORDER_OPTIONS, CHUNK_INTERVAL } from './audioConfig.js';
 import { cleanup } from './cleanupUtils.js';
 import { getMediaRecorder, getAudioChunks, setMediaRecorder, setAudioChunks } from './recorderManager.js';
@@ -30,10 +29,13 @@ export async function startRecording() {
         const recorder = new MediaRecorder(stream, RECORDER_OPTIONS);
         console.log('MediaRecorder created with options:', RECORDER_OPTIONS);
 
+        let dataReceived = false;
+
         recorder.ondataavailable = (event) => {
           if (event.data && event.data.size > 0) {
             console.log('Chunk received:', event.data.size, 'bytes');
             getAudioChunks().push(event.data);
+            dataReceived = true;
           }
         };
 
@@ -47,6 +49,15 @@ export async function startRecording() {
           cleanup();
           reject(new Error('Recording failed to start: ' + error.message));
         };
+
+        // Add safety timeout
+        setTimeout(() => {
+          if (!dataReceived) {
+            console.error('No data received within timeout');
+            cleanup();
+            reject(new Error('No audio data received'));
+          }
+        }, CHUNK_INTERVAL * 2);
 
         setMediaRecorder(recorder);
         recorder.start(CHUNK_INTERVAL);
@@ -77,7 +88,13 @@ export function stopRecording() {
       return;
     }
 
+    const timeoutId = setTimeout(() => {
+      reject(new Error('Stop recording timeout'));
+      cleanup();
+    }, 5000);
+
     mediaRecorder.onstop = () => {
+      clearTimeout(timeoutId);
       try {
         const audioChunks = getAudioChunks();
         if (!audioChunks || audioChunks.length === 0) {
@@ -104,6 +121,7 @@ export function stopRecording() {
     try {
       mediaRecorder.stop();
     } catch (error) {
+      clearTimeout(timeoutId);
       cleanup();
       reject(new Error('Failed to stop recording: ' + error.message));
     }

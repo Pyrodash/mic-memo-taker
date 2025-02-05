@@ -1,4 +1,3 @@
-
 import { recordingState, resetState } from './state.js';
 import { broadcastToAllPorts, sendState } from './portManager.js';
 
@@ -17,39 +16,67 @@ export const startRecording = async (type) => {
       throw new Error('Recording already in progress');
     }
 
-    const [tab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true
-    });
+    // Query all windows to find the active tab
+    const windows = await chrome.windows.getAll({ populate: true });
+    let activeTab = null;
+    
+    for (const window of windows) {
+      if (window.focused) {
+        activeTab = window.tabs?.find(tab => tab.active);
+        if (activeTab) break;
+      }
+    }
 
-    if (!tab?.id) {
+    // Fallback to querying current window if no active tab found
+    if (!activeTab) {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        lastFocusedWindow: true
+      });
+      activeTab = tab;
+    }
+
+    if (!activeTab?.id) {
       throw new Error('No active tab found');
     }
 
-    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('edge://')) {
+    console.log('Found active tab:', activeTab.id);
+
+    if (activeTab.url?.startsWith('chrome://') || activeTab.url?.startsWith('edge://')) {
       throw new Error('Recording not available on browser system pages');
     }
 
-    // Inject content script
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content-script.js']
-      });
-      console.log('Content script injected successfully');
-    } catch (error) {
-      console.error('Script injection error:', error);
-      throw new Error('Failed to initialize recording');
+    // Inject content script with retry mechanism
+    let scriptInjected = false;
+    let retries = 2;
+    
+    while (retries >= 0 && !scriptInjected) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: activeTab.id },
+          files: ['content-script.js']
+        });
+        scriptInjected = true;
+        console.log('Content script injected successfully');
+      } catch (error) {
+        console.error('Script injection attempt failed:', error);
+        retries--;
+        if (retries >= 0) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          throw new Error('Failed to initialize recording');
+        }
+      }
     }
 
-    // Start recording with retry mechanism
-    let retries = 2;
+    // Start recording with enhanced retry mechanism
+    let retries2 = 3;
     let response = null;
     
-    while (retries >= 0 && !response?.success) {
+    while (retries2 >= 0 && !response?.success) {
       try {
-        console.log('Attempting to start recording, attempt', 2 - retries);
-        response = await chrome.tabs.sendMessage(tab.id, {
+        console.log('Attempting to start recording, attempt', 3 - retries2);
+        response = await chrome.tabs.sendMessage(activeTab.id, {
           type: 'START_RECORDING'
         });
         
@@ -59,16 +86,16 @@ export const startRecording = async (type) => {
         }
         
         console.log('Start recording attempt failed:', response);
-        retries--;
+        retries2--;
         
-        if (retries >= 0) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+        if (retries2 >= 0) {
+          await new Promise(resolve => setTimeout(resolve, 1500));
         }
       } catch (error) {
         console.error('Start recording attempt failed:', error);
-        retries--;
-        if (retries < 0) throw error;
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        retries2--;
+        if (retries2 < 0) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
     }
 
@@ -76,7 +103,7 @@ export const startRecording = async (type) => {
       throw new Error(response?.error || 'Failed to start recording');
     }
 
-    recordingState.tabId = tab.id;
+    recordingState.tabId = activeTab.id;
     recordingState.recordingType = type;
     recordingState.startTime = Date.now();
     recordingState.isRecording = true;
