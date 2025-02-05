@@ -5,9 +5,8 @@ interface RecordingState {
   isPaused: boolean;
   duration: number;
   recordingType: 'task' | 'note' | null;
-  mediaRecorder: MediaRecorder | null;
-  audioChunks: Blob[];
   webhookUrl: string;
+  port: chrome.runtime.Port | null;
   setWebhookUrl: (url: string) => void;
   startRecording: (type: 'task' | 'note') => Promise<void>;
   stopRecording: () => Promise<void>;
@@ -15,6 +14,7 @@ interface RecordingState {
   resumeRecording: () => void;
   cancelRecording: () => void;
   incrementDuration: () => void;
+  setState: (state: Partial<RecordingState>) => void;
 }
 
 export const useRecordingStore = create<RecordingState>((set, get) => ({
@@ -22,111 +22,89 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   isPaused: false,
   duration: 0,
   recordingType: null,
-  mediaRecorder: null,
-  audioChunks: [],
   webhookUrl: '',
-  
-  setWebhookUrl: (url) => set({ webhookUrl: url }),
-  
+  port: null,
+
+  setWebhookUrl: async (url) => {
+    await chrome.storage.local.set({ webhookUrl: url });
+    set({ webhookUrl: url });
+  },
+
   startRecording: async (type) => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      const audioChunks: Blob[] = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunks.push(event.data);
-      };
-
-      mediaRecorder.start(1000);
-      
-      set({
-        isRecording: true,
-        recordingType: type,
-        mediaRecorder,
-        audioChunks,
-        duration: 0,
-      });
-    } catch (error) {
-      console.error('Error starting recording:', error);
+    let port = get().port;
+    if (!port) {
+      port = chrome.runtime.connect();
+      setupPortListeners(port, set);
+      set({ port });
     }
+    port.postMessage({ type: 'START_RECORDING', recordingType: type });
   },
 
   stopRecording: async () => {
-    const { mediaRecorder, audioChunks, webhookUrl, recordingType } = get();
-    
-    if (!mediaRecorder) return;
-
-    return new Promise<void>((resolve) => {
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const formData = new FormData();
-        formData.append('audio', audioBlob);
-
-        try {
-          const response = await fetch(`${webhookUrl}?route=${recordingType}`, {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (!response.ok) {
-            throw new Error('Failed to upload recording');
-          }
-        } catch (error) {
-          console.error('Error uploading recording:', error);
-        }
-
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
-        set({
-          isRecording: false,
-          isPaused: false,
-          duration: 0,
-          mediaRecorder: null,
-          audioChunks: [],
-          recordingType: null,
-        });
-        resolve();
-      };
-
-      mediaRecorder.stop();
-    });
+    const { port } = get();
+    if (port) {
+      port.postMessage({ type: 'STOP_RECORDING' });
+    }
   },
 
   pauseRecording: () => {
-    const { mediaRecorder } = get();
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.pause();
-      set({ isPaused: true });
+    const { port } = get();
+    if (port) {
+      port.postMessage({ type: 'PAUSE_RECORDING' });
     }
   },
 
   resumeRecording: () => {
-    const { mediaRecorder } = get();
-    if (mediaRecorder && mediaRecorder.state === 'paused') {
-      mediaRecorder.resume();
-      set({ isPaused: false });
+    const { port } = get();
+    if (port) {
+      port.postMessage({ type: 'RESUME_RECORDING' });
     }
   },
 
   cancelRecording: () => {
-    const { mediaRecorder } = get();
-    if (mediaRecorder) {
-      mediaRecorder.stream.getTracks().forEach(track => track.stop());
-      set({
-        isRecording: false,
-        isPaused: false,
-        duration: 0,
-        mediaRecorder: null,
-        audioChunks: [],
-        recordingType: null,
-      });
+    const { port } = get();
+    if (port) {
+      port.postMessage({ type: 'CANCEL_RECORDING' });
     }
   },
 
   incrementDuration: () => {
-    const { isRecording, isPaused } = get();
-    if (isRecording && !isPaused) {
-      set((state) => ({ duration: state.duration + 1 }));
-    }
+    // This is now handled by the background script
+  },
+
+  setState: (state) => {
+    set(state);
   },
 }));
+
+function setupPortListeners(port: chrome.runtime.Port, set: any) {
+  port.onMessage.addListener((msg) => {
+    switch (msg.type) {
+      case 'STATE_UPDATE':
+        set(msg.state);
+        break;
+      case 'ERROR':
+        // Handle error (you could use the toast here)
+        console.error('Recording error:', msg.error);
+        break;
+    }
+  });
+
+  port.onDisconnect.addListener(() => {
+    set({ port: null });
+  });
+}
+
+// Initialize connection and state
+if (typeof chrome !== 'undefined' && chrome.runtime) {
+  const port = chrome.runtime.connect();
+  setupPortListeners(port, useRecordingStore.setState);
+  port.postMessage({ type: 'GET_STATE' });
+
+  // Load webhook URL from storage
+  chrome.storage.local.get('webhookUrl').then((result) => {
+    if (result.webhookUrl) {
+      useRecordingStore.setState({ webhookUrl: result.webhookUrl });
+    }
+  });
+}
