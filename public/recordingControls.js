@@ -1,3 +1,4 @@
+
 import { recordingState, resetState } from './state.js';
 import { broadcastToAllPorts, sendState } from './portManager.js';
 
@@ -85,8 +86,10 @@ export const stopRecording = async () => {
       try {
         const webhookUrl = await chrome.storage.local.get('webhookUrl');
         if (webhookUrl.webhookUrl) {
+          // Convert blob to File with explicit MIME type
           const audioFile = new File([response.blob], "recording.webm", { 
-            type: "audio/webm;codecs=opus"
+            type: "audio/webm;codecs=opus",
+            lastModified: Date.now()
           });
 
           console.log('Preparing file for upload:', {
@@ -96,8 +99,18 @@ export const stopRecording = async () => {
             lastModified: audioFile.lastModified
           });
 
+          // Create FormData and append file
           const formData = new FormData();
           formData.append('audio', audioFile);
+
+          // Verify FormData content
+          for (let [key, value] of formData.entries()) {
+            console.log('FormData entry:', key, value instanceof File ? {
+              name: value.name,
+              size: value.size,
+              type: value.type
+            } : value);
+          }
 
           console.log('Sending to webhook:', webhookUrl.webhookUrl);
           const uploadResponse = await fetch(`${webhookUrl.webhookUrl}?route=${recordingState.recordingType}`, {
@@ -124,6 +137,7 @@ export const stopRecording = async () => {
       }
     } else {
       console.error('No blob received from recording');
+      throw new Error('No audio data received');
     }
 
     resetState();
