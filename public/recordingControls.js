@@ -1,14 +1,9 @@
+
 import { recordingState, resetState } from './state.js';
 import { broadcastToAllPorts, sendState } from './portManager.js';
-
-export const updateBadge = () => {
-  chrome.action.setBadgeText({ 
-    text: recordingState.isRecording ? '🎤' : '' 
-  });
-  if (recordingState.isRecording) {
-    chrome.action.setBadgeBackgroundColor({ color: '#FF0000' });
-  }
-};
+import { updateBadge } from './badgeManager.js';
+import { findActiveTab, injectContentScript } from './tabManager.js';
+import { uploadToWebhook } from './webhookManager.js';
 
 export const startRecording = async (type) => {
   try {
@@ -16,66 +11,18 @@ export const startRecording = async (type) => {
       throw new Error('Recording already in progress');
     }
 
-    // Query all windows to find the active tab
-    const windows = await chrome.windows.getAll({ populate: true });
-    let activeTab = null;
-    
-    for (const window of windows) {
-      if (window.focused) {
-        activeTab = window.tabs?.find(tab => tab.active);
-        if (activeTab) break;
-      }
-    }
-
-    // Fallback to querying current window if no active tab found
-    if (!activeTab) {
-      const [tab] = await chrome.tabs.query({
-        active: true,
-        lastFocusedWindow: true
-      });
-      activeTab = tab;
-    }
-
-    if (!activeTab?.id) {
-      throw new Error('No active tab found');
-    }
-
+    const activeTab = await findActiveTab();
     console.log('Found active tab:', activeTab.id);
 
-    if (activeTab.url?.startsWith('chrome://') || activeTab.url?.startsWith('edge://')) {
-      throw new Error('Recording not available on browser system pages');
-    }
-
-    // Inject content script with retry mechanism
-    let scriptInjected = false;
-    let retries = 2;
-    
-    while (retries >= 0 && !scriptInjected) {
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: activeTab.id },
-          files: ['content-script.js']
-        });
-        scriptInjected = true;
-        console.log('Content script injected successfully');
-      } catch (error) {
-        console.error('Script injection attempt failed:', error);
-        retries--;
-        if (retries >= 0) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        } else {
-          throw new Error('Failed to initialize recording');
-        }
-      }
-    }
+    await injectContentScript(activeTab.id);
 
     // Start recording with enhanced retry mechanism
-    let retries2 = 3;
+    let retries = 3;
     let response = null;
     
-    while (retries2 >= 0 && !response?.success) {
+    while (retries >= 0 && !response?.success) {
       try {
-        console.log('Attempting to start recording, attempt', 3 - retries2);
+        console.log('Attempting to start recording, attempt', 3 - retries);
         response = await chrome.tabs.sendMessage(activeTab.id, {
           type: 'START_RECORDING'
         });
@@ -86,15 +33,15 @@ export const startRecording = async (type) => {
         }
         
         console.log('Start recording attempt failed:', response);
-        retries2--;
+        retries--;
         
-        if (retries2 >= 0) {
+        if (retries >= 0) {
           await new Promise(resolve => setTimeout(resolve, 1500));
         }
       } catch (error) {
         console.error('Start recording attempt failed:', error);
-        retries2--;
-        if (retries2 < 0) throw error;
+        retries--;
+        if (retries < 0) throw error;
         await new Promise(resolve => setTimeout(resolve, 1500));
       }
     }
@@ -109,7 +56,7 @@ export const startRecording = async (type) => {
     recordingState.isRecording = true;
     recordingState.isPaused = false;
     
-    updateBadge();
+    updateBadge(true);
     sendState();
 
   } catch (error) {
@@ -144,42 +91,14 @@ export const stopRecording = async () => {
     }
 
     try {
-      const webhookUrl = await chrome.storage.local.get('webhookUrl');
-      if (!webhookUrl.webhookUrl) {
-        throw new Error('Webhook URL not configured');
-      }
-
-      const formData = new FormData();
-      const audioFile = new File([response.blob], 'recording.webm', {
-        type: 'audio/webm;codecs=opus',
-        lastModified: Date.now()
-      });
-
-      formData.append('audio', audioFile);
-      
-      console.log('Sending to webhook:', webhookUrl.webhookUrl);
-      
-      const uploadResponse = await fetch(
-        `${webhookUrl.webhookUrl}?route=${recordingState.recordingType}`,
-        {
-          method: 'POST',
-          body: formData
-        }
-      );
-
-      if (!uploadResponse.ok) {
-        throw new Error(`Upload failed: ${uploadResponse.status}`);
-      }
-
-      console.log('Upload successful');
-
+      await uploadToWebhook(response.blob, recordingState.recordingType);
     } catch (error) {
       console.error('Upload error:', error);
       broadcastToAllPorts({ type: 'ERROR', error: error.message });
     }
 
     resetState();
-    updateBadge();
+    updateBadge(false);
     sendState();
 
   } catch (error) {
@@ -233,7 +152,7 @@ export const cancelRecording = async () => {
     });
     
     resetState();
-    updateBadge();
+    updateBadge(false);
     sendState();
   } catch (error) {
     console.error('Cancel error:', error);
