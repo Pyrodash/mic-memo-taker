@@ -1,4 +1,3 @@
-
 let recordingState = {
   isRecording: false,
   isPaused: false,
@@ -55,6 +54,10 @@ async function handleMessage(msg) {
 
 async function startRecording(type) {
   try {
+    if (recordingState.isRecording) {
+      throw new Error('Recording already in progress');
+    }
+
     // Get the current window first
     const currentWindow = await chrome.windows.getCurrent();
     if (!currentWindow?.id) {
@@ -69,7 +72,7 @@ async function startRecording(type) {
 
     const tab = tabs[0];
     if (!tab?.id) {
-      throw new Error('No active tab found. Please ensure you are on a web page.');
+      throw new Error('No active tab found');
     }
 
     // Check if we're on a restricted URL
@@ -77,8 +80,8 @@ async function startRecording(type) {
       throw new Error('Recording is not available on browser system pages');
     }
 
-    // Add a small delay to ensure tab is fully ready
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Store the tab ID where recording started
+    recordingState.tabId = tab.id;
 
     // Inject content script
     await chrome.scripting.executeScript({
@@ -100,35 +103,23 @@ async function startRecording(type) {
     recordingState.startTime = Date.now();
     recordingState.isPaused = false;
     recordingState.isRecording = true;
-    recordingState.tabId = tab.id;
     updateBadge();
     sendState();
   } catch (error) {
     console.error('Error starting recording:', error);
-    port?.postMessage({ type: 'ERROR', error: error.message });
+    activePorts.forEach(port => {
+      port.postMessage({ type: 'ERROR', error: error.message });
+    });
   }
 }
 
 async function stopRecording() {
   try {
-    // Get the current window first
-    const currentWindow = await chrome.windows.getCurrent();
-    if (!currentWindow?.id) {
-      throw new Error('Could not determine current window');
+    if (!recordingState.tabId) {
+      throw new Error('No active recording found');
     }
 
-    // Then query for the active tab in that specific window
-    const tabs = await chrome.tabs.query({
-      active: true,
-      windowId: currentWindow.id
-    });
-
-    const tab = tabs[0];
-    if (!tab?.id) {
-      throw new Error('No active tab found. Please ensure you are on a web page.');
-    }
-
-    const response = await chrome.tabs.sendMessage(tab.id, { type: 'STOP_RECORDING' });
+    const response = await chrome.tabs.sendMessage(recordingState.tabId, { type: 'STOP_RECORDING' });
     if (!response || !response.success) {
       throw new Error(response?.error || 'Failed to stop recording');
     }
@@ -138,7 +129,9 @@ async function stopRecording() {
         const webhookUrl = await chrome.storage.local.get('webhookUrl');
         if (webhookUrl.webhookUrl) {
           // Wrap the blob in a File, giving it a name and MIME type
-          const audioFile = new File([response.blob], "recording.webm", { type: "audio/webm" });
+          const audioFile = new File([response.blob], "recording.webm", { 
+            type: "audio/webm;codecs=opus"
+          });
 
           const formData = new FormData();
           formData.append('audio', audioFile);
@@ -154,89 +147,66 @@ async function stopRecording() {
         }
       } catch (error) {
         console.error('Error uploading recording:', error);
-        port?.postMessage({ type: 'ERROR', error: error.message });
+        activePorts.forEach(port => {
+          port.postMessage({ type: 'ERROR', error: error.message });
+        });
       }
     }
 
     cleanup();
   } catch (error) {
     console.error('Error stopping recording:', error);
-    port?.postMessage({ type: 'ERROR', error: error.message });
+    activePorts.forEach(port => {
+      port.postMessage({ type: 'ERROR', error: error.message });
+    });
   }
 }
 
 async function pauseRecording() {
   try {
-    // Get the current window first
-    const currentWindow = await chrome.windows.getCurrent();
-    if (!currentWindow?.id) return;
-
-    // Then query for the active tab in that specific window
-    const tabs = await chrome.tabs.query({
-      active: true,
-      windowId: currentWindow.id
-    });
-
-    const tab = tabs[0];
-    if (!tab?.id) return;
-
-    const response = await chrome.tabs.sendMessage(tab.id, { type: 'PAUSE_RECORDING' });
+    if (!recordingState.tabId) return;
+    
+    const response = await chrome.tabs.sendMessage(recordingState.tabId, { type: 'PAUSE_RECORDING' });
     if (response?.success) {
       recordingState.isPaused = true;
       sendState();
     }
   } catch (error) {
     console.error('Error pausing recording:', error);
-    port?.postMessage({ type: 'ERROR', error: error.message });
+    activePorts.forEach(port => {
+      port.postMessage({ type: 'ERROR', error: error.message });
+    });
   }
 }
 
 async function resumeRecording() {
   try {
-    // Get the current window first
-    const currentWindow = await chrome.windows.getCurrent();
-    if (!currentWindow?.id) return;
-
-    // Then query for the active tab in that specific window
-    const tabs = await chrome.tabs.query({
-      active: true,
-      windowId: currentWindow.id
-    });
-
-    const tab = tabs[0];
-    if (!tab?.id) return;
-
-    const response = await chrome.tabs.sendMessage(tab.id, { type: 'RESUME_RECORDING' });
+    if (!recordingState.tabId) return;
+    
+    const response = await chrome.tabs.sendMessage(recordingState.tabId, { type: 'RESUME_RECORDING' });
     if (response?.success) {
       recordingState.isPaused = false;
       sendState();
     }
   } catch (error) {
     console.error('Error resuming recording:', error);
-    port?.postMessage({ type: 'ERROR', error: error.message });
+    activePorts.forEach(port => {
+      port.postMessage({ type: 'ERROR', error: error.message });
+    });
   }
 }
 
 async function cancelRecording() {
   try {
-    // Get the current window first
-    const currentWindow = await chrome.windows.getCurrent();
-    if (!currentWindow?.id) return;
-
-    // Then query for the active tab in that specific window
-    const tabs = await chrome.tabs.query({
-      active: true,
-      windowId: currentWindow.id
-    });
-
-    const tab = tabs[0];
-    if (!tab?.id) return;
-
-    await chrome.tabs.sendMessage(tab.id, { type: 'CANCEL_RECORDING' });
+    if (!recordingState.tabId) return;
+    
+    await chrome.tabs.sendMessage(recordingState.tabId, { type: 'CANCEL_RECORDING' });
     cleanup();
   } catch (error) {
     console.error('Error canceling recording:', error);
-    port?.postMessage({ type: 'ERROR', error: error.message });
+    activePorts.forEach(port => {
+      port.postMessage({ type: 'ERROR', error: error.message });
+    });
   }
 }
 

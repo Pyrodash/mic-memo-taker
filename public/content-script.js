@@ -36,12 +36,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function startRecording() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ 
-      audio: true,
+      audio: {
+        channelCount: 1,
+        sampleRate: 44100,
+        echoCancellation: true,
+        noiseSuppression: true
+      },
       video: false
     });
     
     mediaRecorder = new MediaRecorder(stream, {
-      mimeType: 'audio/webm;codecs=opus'
+      mimeType: 'audio/webm;codecs=opus',
+      audioBitsPerSecond: 128000
     });
     
     audioChunks = [];
@@ -52,8 +58,9 @@ async function startRecording() {
       }
     };
 
-    // Start without a timeslice for a single final chunk once stopped
-    mediaRecorder.start();
+    // Request data every 1 second to get multiple chunks
+    mediaRecorder.start(1000);
+    console.log('Recording started with timeslice');
     return true;
   } catch (error) {
     console.error('Error starting recording:', error);
@@ -69,8 +76,7 @@ function stopRecording() {
     }
 
     mediaRecorder.onstop = async () => {
-      // Wait for any final chunks
-      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('Recorder stopped, chunks:', audioChunks.length);
       
       if (audioChunks.length === 0) {
         cleanup();
@@ -78,33 +84,18 @@ function stopRecording() {
         return;
       }
 
-      // Create and verify the blob
       const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+      console.log(`Final recording size: ${audioBlob.size} bytes`);
+      
+      // More thorough validation
       if (audioBlob.size < 1000) {
         cleanup();
-        reject(new Error('Recording too short or empty'));
+        reject(new Error('Recording too short'));
         return;
       }
 
-      console.log(`Final recording size: ${audioBlob.size} bytes`);
-      
-      // Test if the audio is valid
-      const testUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(testUrl);
-      
-      try {
-        await audio.play();
-        // If we get here, audio is valid
-        audio.pause();
-        URL.revokeObjectURL(testUrl);
-        cleanup();
-        resolve(audioBlob);
-      } catch (error) {
-        console.error('Invalid audio recording:', error);
-        cleanup();
-        URL.revokeObjectURL(testUrl);
-        reject(new Error('Invalid audio recording'));
-      }
+      cleanup();
+      resolve(audioBlob);
     };
 
     try {
@@ -120,6 +111,7 @@ function pauseRecording() {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     try {
       mediaRecorder.pause();
+      console.log('Recording paused');
     } catch (error) {
       console.error('Error pausing recording:', error);
     }
@@ -130,6 +122,7 @@ function resumeRecording() {
   if (mediaRecorder && mediaRecorder.state === 'paused') {
     try {
       mediaRecorder.resume();
+      console.log('Recording resumed');
     } catch (error) {
       console.error('Error resuming recording:', error);
     }
