@@ -34,42 +34,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function startRecording() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        sampleRate: 44100,
-      }
-    });
+  console.log('Starting recording with following settings:');
+  const constraints = {
+    audio: {
+      channelCount: 1,
+      sampleRate: 44100,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false
+    }
+  };
+  console.log('Audio constraints:', constraints);
 
-    // Create MediaRecorder with specific MIME type and codec
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    console.log('Stream obtained:', stream.getAudioTracks()[0].getSettings());
+
     const options = {
       mimeType: 'audio/webm;codecs=opus',
-      bitsPerSecond: 128000
+      audioBitsPerSecond: 128000
     };
 
     if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+      console.error('MIME type not supported:', options.mimeType);
+      console.log('Supported MIME types:', MediaRecorder.isTypeSupported);
       throw new Error(`MIME type ${options.mimeType} is not supported`);
     }
 
+    console.log('Creating MediaRecorder with options:', options);
     mediaRecorder = new MediaRecorder(stream, options);
     audioChunks = [];
 
-    // Handle data available event
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         audioChunks.push(event.data);
-        console.log(`Chunk collected: ${event.data.size} bytes`);
+        console.log(`Chunk collected: ${event.data.size} bytes, type: ${event.data.type}`);
       }
     };
 
-    // Collect data every 1 second to ensure continuous recording
+    mediaRecorder.onerror = (error) => {
+      console.error('MediaRecorder error:', error);
+    };
+
     mediaRecorder.start(1000);
-    console.log('Recording started');
+    console.log('MediaRecorder started:', mediaRecorder.state);
     return true;
 
   } catch (error) {
-    console.error('Error starting recording:', error);
+    console.error('Error in startRecording:', error);
     cleanup();
     throw error;
   }
@@ -78,34 +90,47 @@ async function startRecording() {
 function stopRecording() {
   return new Promise((resolve, reject) => {
     if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+      console.error('No active recording found');
       cleanup();
       reject(new Error('No active recording'));
       return;
     }
 
+    console.log('Stopping recording...');
     mediaRecorder.onstop = async () => {
       try {
-        console.log(`Collected ${audioChunks.length} chunks`);
+        console.log(`Total chunks collected: ${audioChunks.length}`);
+        console.log('Chunk sizes:', audioChunks.map(chunk => chunk.size));
 
         if (audioChunks.length === 0) {
+          console.error('No audio chunks collected');
           cleanup();
           reject(new Error('No audio data recorded'));
           return;
         }
 
-        // Create blob with proper MIME type
         const audioBlob = new Blob(audioChunks, {
           type: 'audio/webm;codecs=opus'
         });
 
-        console.log(`Final blob size: ${audioBlob.size} bytes`);
+        console.log('Final blob details:', {
+          size: audioBlob.size,
+          type: audioBlob.type
+        });
 
-        // Verify blob size and content
+        // Verify blob content
         if (audioBlob.size < 1000) {
+          console.error('Blob size too small:', audioBlob.size);
           cleanup();
           reject(new Error('Recording too short or no audio captured'));
           return;
         }
+
+        // Create an audio element to verify the blob
+        const audio = new Audio(URL.createObjectURL(audioBlob));
+        audio.onloadedmetadata = () => {
+          console.log('Audio duration:', audio.duration);
+        };
 
         cleanup();
         resolve(audioBlob);
@@ -117,9 +142,9 @@ function stopRecording() {
       }
     };
 
-    // Ensure we get the last chunk of data
     mediaRecorder.requestData();
     mediaRecorder.stop();
+    console.log('MediaRecorder stopped');
   });
 }
 
@@ -127,6 +152,8 @@ function pauseRecording() {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     mediaRecorder.pause();
     console.log('Recording paused');
+  } else {
+    console.warn('Cannot pause - recorder state:', mediaRecorder?.state);
   }
 }
 
@@ -134,21 +161,28 @@ function resumeRecording() {
   if (mediaRecorder && mediaRecorder.state === 'paused') {
     mediaRecorder.resume();
     console.log('Recording resumed');
+  } else {
+    console.warn('Cannot resume - recorder state:', mediaRecorder?.state);
   }
 }
 
 function cancelRecording() {
+  console.log('Canceling recording');
   cleanup();
 }
 
 function cleanup() {
+  console.log('Cleaning up recording resources');
   if (mediaRecorder) {
     try {
       if (mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
       }
       if (mediaRecorder.stream) {
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        mediaRecorder.stream.getTracks().forEach(track => {
+          track.stop();
+          console.log('Audio track stopped:', track.label);
+        });
       }
     } catch (error) {
       console.error('Error during cleanup:', error);

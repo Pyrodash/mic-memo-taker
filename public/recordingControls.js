@@ -1,4 +1,3 @@
-
 import { recordingState, resetState } from './state.js';
 import { broadcastToAllPorts, sendState } from './portManager.js';
 
@@ -36,6 +35,7 @@ export const startRecording = async (type) => {
       throw new Error('Recording is not available on browser system pages');
     }
 
+    console.log('Starting recording of type:', type);
     recordingState.tabId = tab.id;
 
     await chrome.scripting.executeScript({
@@ -47,6 +47,8 @@ export const startRecording = async (type) => {
       type: 'START_RECORDING',
       recordingType: type
     });
+
+    console.log('Start recording response:', response);
 
     if (!response || !response.success) {
       throw new Error(response?.error || 'Failed to start recording');
@@ -70,7 +72,11 @@ export const stopRecording = async () => {
       throw new Error('No active recording found');
     }
 
+    console.log('Stopping recording...');
     const response = await chrome.tabs.sendMessage(recordingState.tabId, { type: 'STOP_RECORDING' });
+    
+    console.log('Stop recording response:', response);
+
     if (!response || !response.success) {
       throw new Error(response?.error || 'Failed to stop recording');
     }
@@ -79,37 +85,45 @@ export const stopRecording = async () => {
       try {
         const webhookUrl = await chrome.storage.local.get('webhookUrl');
         if (webhookUrl.webhookUrl) {
-          // Create a File object with explicit MIME type
           const audioFile = new File([response.blob], "recording.webm", { 
             type: "audio/webm;codecs=opus"
+          });
+
+          console.log('Preparing file for upload:', {
+            name: audioFile.name,
+            size: audioFile.size,
+            type: audioFile.type,
+            lastModified: audioFile.lastModified
           });
 
           const formData = new FormData();
           formData.append('audio', audioFile);
 
-          // Log the file details before sending
-          console.log('Sending file:', {
-            size: audioFile.size,
-            type: audioFile.type,
-            name: audioFile.name
-          });
-
+          console.log('Sending to webhook:', webhookUrl.webhookUrl);
           const uploadResponse = await fetch(`${webhookUrl.webhookUrl}?route=${recordingState.recordingType}`, {
             method: 'POST',
             body: formData,
           });
 
+          console.log('Webhook response status:', uploadResponse.status);
+          
           if (!uploadResponse.ok) {
+            const errorText = await uploadResponse.text();
+            console.error('Upload failed:', errorText);
             throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
           }
 
           const responseData = await uploadResponse.text();
-          console.log('Upload response:', responseData);
+          console.log('Upload success response:', responseData);
+        } else {
+          console.warn('No webhook URL configured');
         }
       } catch (error) {
         console.error('Error uploading recording:', error);
         broadcastToAllPorts({ type: 'ERROR', error: error.message });
       }
+    } else {
+      console.error('No blob received from recording');
     }
 
     resetState();
