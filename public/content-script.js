@@ -35,19 +35,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function startRecording() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      audio: true,
+      video: false
+    });
+    
+    mediaRecorder = new MediaRecorder(stream, {
+      mimeType: 'audio/webm'
+    });
+    
     audioChunks = [];
 
     mediaRecorder.ondataavailable = (event) => {
-      audioChunks.push(event.data);
+      if (event.data.size > 0) {
+        audioChunks.push(event.data);
+      }
     };
 
     mediaRecorder.start(1000);
-    chrome.runtime.sendMessage({ type: 'RECORDING_STARTED' });
+    return true;
   } catch (error) {
     console.error('Error starting recording:', error);
-    throw error;
+    throw new Error('Failed to start recording: ' + error.message);
   }
 }
 
@@ -64,32 +73,49 @@ function stopRecording() {
       resolve(audioBlob);
     };
 
-    mediaRecorder.stop();
+    try {
+      mediaRecorder.stop();
+    } catch (error) {
+      cleanup();
+      reject(new Error('Failed to stop recording: ' + error.message));
+    }
   });
 }
 
 function pauseRecording() {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.pause();
-    chrome.runtime.sendMessage({ type: 'RECORDING_PAUSED' });
+    try {
+      mediaRecorder.pause();
+    } catch (error) {
+      console.error('Error pausing recording:', error);
+    }
   }
 }
 
 function resumeRecording() {
   if (mediaRecorder && mediaRecorder.state === 'paused') {
-    mediaRecorder.resume();
-    chrome.runtime.sendMessage({ type: 'RECORDING_RESUMED' });
+    try {
+      mediaRecorder.resume();
+    } catch (error) {
+      console.error('Error resuming recording:', error);
+    }
   }
 }
 
 function cancelRecording() {
   cleanup();
-  chrome.runtime.sendMessage({ type: 'RECORDING_CANCELLED' });
 }
 
 function cleanup() {
   if (mediaRecorder) {
-    mediaRecorder.stream.getTracks().forEach(track => track.stop());
+    try {
+      if (mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+      mediaRecorder.stream.getTracks().forEach(track => track.stop());
+    } catch (error) {
+      console.error('Error during cleanup:', error);
+    }
     mediaRecorder = null;
   }
   audioChunks = [];

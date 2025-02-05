@@ -1,9 +1,10 @@
+
 import { useState } from 'react';
 import { Settings as SettingsIcon } from 'lucide-react';
 import { useRecordingStore } from '../store/recording-store';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from './ui/dialog';
 
 export const Settings = () => {
   const { webhookUrl, setWebhookUrl } = useRecordingStore();
@@ -25,6 +26,9 @@ export const Settings = () => {
       <DialogContent className="bg-recorder-bg text-white border-gray-700">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
+          <DialogDescription className="text-gray-400">
+            Configure your recording settings and webhook URL.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">

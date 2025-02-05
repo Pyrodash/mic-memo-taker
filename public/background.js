@@ -1,3 +1,4 @@
+
 let isRecording = false;
 let startTime = 0;
 let isPaused = false;
@@ -35,27 +36,8 @@ async function handleMessage(msg) {
   }
 }
 
-async function requestMicrophonePermission() {
-  try {
-    const result = await chrome.permissions.request({
-      permissions: ['microphone']
-    });
-    return result;
-  } catch (error) {
-    console.error('Error requesting microphone permission:', error);
-    return false;
-  }
-}
-
 async function startRecording(type) {
   try {
-    // Request microphone permission first
-    const hasMicPermission = await requestMicrophonePermission();
-    if (!hasMicPermission) {
-      throw new Error('Microphone permission denied');
-    }
-
-    // Initialize recording in the content script
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) {
       throw new Error('No active tab found');
