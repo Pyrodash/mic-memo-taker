@@ -40,14 +40,19 @@ async function startRecording() {
         channelCount: 1,
         sampleRate: 44100,
         echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
+        noiseSuppression: true
       },
       video: false
     });
+
+    // Check available MIME types
+    const mimeType = 'audio/webm;codecs=opus';
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      throw new Error('Codec not supported');
+    }
     
     mediaRecorder = new MediaRecorder(stream, {
-      mimeType: 'audio/webm',
+      mimeType: mimeType,
       audioBitsPerSecond: 128000
     });
     
@@ -60,9 +65,9 @@ async function startRecording() {
       }
     };
 
-    // Don't use timeslice, let it record continuously
-    mediaRecorder.start();
-    console.log('Recording started');
+    // Request chunks every 1 second to ensure we're getting data
+    mediaRecorder.start(1000);
+    console.log('Recording started with timeslice');
     return true;
   } catch (error) {
     console.error('Error starting recording:', error);
@@ -86,7 +91,7 @@ function stopRecording() {
         return;
       }
 
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
       console.log(`Final recording size: ${audioBlob.size} bytes`);
       
       if (audioBlob.size < 1000) {
@@ -104,6 +109,7 @@ function stopRecording() {
     try {
       // Ensure we're actually recording before stopping
       if (mediaRecorder.state === 'recording') {
+        mediaRecorder.requestData(); // Request any final chunks
         mediaRecorder.stop();
       } else {
         handleStop();
