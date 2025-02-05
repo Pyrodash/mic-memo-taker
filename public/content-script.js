@@ -40,13 +40,14 @@ async function startRecording() {
         channelCount: 1,
         sampleRate: 44100,
         echoCancellation: true,
-        noiseSuppression: true
+        noiseSuppression: true,
+        autoGainControl: true
       },
       video: false
     });
     
     mediaRecorder = new MediaRecorder(stream, {
-      mimeType: 'audio/webm;codecs=opus',
+      mimeType: 'audio/webm',
       audioBitsPerSecond: 128000
     });
     
@@ -55,12 +56,13 @@ async function startRecording() {
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         audioChunks.push(event.data);
+        console.log('Chunk received:', event.data.size, 'bytes');
       }
     };
 
-    // Request data every 1 second to get multiple chunks
-    mediaRecorder.start(1000);
-    console.log('Recording started with timeslice');
+    // Don't use timeslice, let it record continuously
+    mediaRecorder.start();
+    console.log('Recording started');
     return true;
   } catch (error) {
     console.error('Error starting recording:', error);
@@ -75,7 +77,7 @@ function stopRecording() {
       return;
     }
 
-    mediaRecorder.onstop = async () => {
+    const handleStop = () => {
       console.log('Recorder stopped, chunks:', audioChunks.length);
       
       if (audioChunks.length === 0) {
@@ -84,10 +86,9 @@ function stopRecording() {
         return;
       }
 
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
       console.log(`Final recording size: ${audioBlob.size} bytes`);
       
-      // More thorough validation
       if (audioBlob.size < 1000) {
         cleanup();
         reject(new Error('Recording too short'));
@@ -98,8 +99,15 @@ function stopRecording() {
       resolve(audioBlob);
     };
 
+    mediaRecorder.onstop = handleStop;
+
     try {
-      mediaRecorder.stop();
+      // Ensure we're actually recording before stopping
+      if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      } else {
+        handleStop();
+      }
     } catch (error) {
       cleanup();
       reject(new Error('Failed to stop recording: ' + error.message));
