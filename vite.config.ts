@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  base: './',
   build: {
     outDir: 'dist',
     rollupOptions: {
@@ -27,12 +28,12 @@ export default defineConfig(({ mode }) => ({
         background: path.resolve(__dirname, 'public/background.js')
       },
       output: {
-        entryFileNames: (chunkInfo) => {
-          return chunkInfo.name === 'background' ? '[name].js' : 'assets/[name]-[hash].js';
-        },
-        chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash][extname]'
+        entryFileNames: '[name].js',
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames: 'assets/[name][extname]'
       }
-    }
+    },
+    assetsInlineLimit: 0,
+    emptyOutDir: true
   }
 }));
