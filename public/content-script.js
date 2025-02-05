@@ -7,13 +7,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const handlers = {
     START_RECORDING: async () => {
       try {
-        const success = await startRecording();
-        sendResponse({ success });
+        await startRecording();
+        sendResponse({ success: true });
       } catch (error) {
         console.error('Start recording error:', error);
         sendResponse({ success: false, error: error.message });
       }
-      return true;
+      return true; // Keep message channel open for async response
     },
     
     STOP_RECORDING: async () => {
@@ -32,21 +32,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     },
     
     PAUSE_RECORDING: () => {
-      pauseRecording();
-      sendResponse({ success: true });
+      try {
+        pauseRecording();
+        sendResponse({ success: true });
+      } catch (error) {
+        sendResponse({ success: false, error: error.message });
+      }
+      return true;
     },
     
     RESUME_RECORDING: () => {
-      resumeRecording();
-      sendResponse({ success: true });
+      try {
+        resumeRecording();
+        sendResponse({ success: true });
+      } catch (error) {
+        sendResponse({ success: false, error: error.message });
+      }
+      return true;
     },
     
     CANCEL_RECORDING: () => {
-      cancelRecording();
-      sendResponse({ success: true });
+      try {
+        cancelRecording();
+        sendResponse({ success: true });
+      } catch (error) {
+        sendResponse({ success: false, error: error.message });
+      }
+      return true;
     }
   };
 
   const handler = handlers[message.type];
-  return handler ? handler() : false;
+  if (!handler) return false;
+  return handler();
 });

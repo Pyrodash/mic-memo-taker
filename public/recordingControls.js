@@ -1,4 +1,3 @@
-
 import { recordingState, resetState } from './state.js';
 import { broadcastToAllPorts, sendState } from './portManager.js';
 
@@ -37,16 +36,41 @@ export const startRecording = async (type) => {
       throw new Error('Recording not available on browser system pages');
     }
 
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['content-script.js']
-    });
+    // Inject content script if not already injected
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content-script.js']
+      });
+    } catch (error) {
+      console.error('Script injection error:', error);
+      throw new Error('Failed to initialize recording');
+    }
 
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      type: 'START_RECORDING'
-    });
-
-    console.log('Start recording response:', response);
+    // Start recording with retry mechanism
+    let retries = 2;
+    let response;
+    
+    while (retries >= 0 && !response?.success) {
+      try {
+        response = await chrome.tabs.sendMessage(tab.id, {
+          type: 'START_RECORDING'
+        });
+        
+        if (response?.success) break;
+        
+        console.log(`Retry attempt ${2 - retries}, response:`, response);
+        retries--;
+        
+        if (retries >= 0) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } catch (error) {
+        console.error('Start recording attempt failed:', error);
+        retries--;
+        if (retries < 0) throw error;
+      }
+    }
 
     if (!response?.success) {
       throw new Error(response?.error || 'Failed to start recording');
@@ -63,7 +87,9 @@ export const startRecording = async (type) => {
 
   } catch (error) {
     console.error('Error starting recording:', error);
+    resetState();
     broadcastToAllPorts({ type: 'ERROR', error: error.message });
+    throw error;
   }
 };
 
@@ -187,4 +213,3 @@ export const cancelRecording = async () => {
     broadcastToAllPorts({ type: 'ERROR', error: error.message });
   }
 };
-

@@ -1,10 +1,10 @@
 
 export const AUDIO_CONSTRAINTS = {
   channelCount: 1,
-  sampleRate: 44100,
   echoCancellation: true,
   noiseSuppression: true,
-  autoGainControl: true
+  autoGainControl: true,
+  sampleRate: 44100
 };
 
 export const RECORDER_OPTIONS = {
