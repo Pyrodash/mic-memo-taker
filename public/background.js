@@ -38,10 +38,30 @@ async function handleMessage(msg) {
 
 async function startRecording(type) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) {
-      throw new Error('No active tab found');
+    // Get the current window first
+    const currentWindow = await chrome.windows.getCurrent();
+    if (!currentWindow?.id) {
+      throw new Error('Could not determine current window');
     }
+
+    // Then query for the active tab in that specific window
+    const tabs = await chrome.tabs.query({
+      active: true,
+      windowId: currentWindow.id
+    });
+
+    const tab = tabs[0];
+    if (!tab?.id) {
+      throw new Error('No active tab found. Please ensure you are on a web page.');
+    }
+
+    // Check if we're on a restricted URL
+    if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('edge://')) {
+      throw new Error('Recording is not available on browser system pages');
+    }
+
+    // Add a small delay to ensure tab is fully ready
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     // Inject content script
     await chrome.scripting.executeScript({
@@ -50,7 +70,7 @@ async function startRecording(type) {
     });
 
     // Start recording
-    const response = await chrome.tabs.sendMessage(tab.id, { 
+    const response = await chrome.tabs.sendMessage(tab.id, {
       type: 'START_RECORDING',
       recordingType: type
     });
