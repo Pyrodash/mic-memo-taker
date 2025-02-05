@@ -44,6 +44,12 @@ async function startRecording(type) {
       throw new Error('No active tab found');
     }
 
+    // Check if we can access the tab
+    const url = new URL(tab.url);
+    if (url.protocol === 'chrome:' || url.protocol === 'edge:') {
+      throw new Error('Recording is not supported on browser system pages');
+    }
+
     // Inject content script
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
