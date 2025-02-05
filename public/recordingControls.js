@@ -1,3 +1,4 @@
+
 import { recordingState, resetState } from './state.js';
 import { broadcastToAllPorts, sendState } from './portManager.js';
 
@@ -16,32 +17,26 @@ export const startRecording = async (type) => {
       throw new Error('Recording already in progress');
     }
 
-    // Query for current window first
-    const windows = await chrome.windows.getCurrent();
-    const tabs = await chrome.tabs.query({
+    const [tab] = await chrome.tabs.query({
       active: true,
-      windowId: windows.id
+      currentWindow: true
     });
 
-    if (!tabs || tabs.length === 0) {
-      throw new Error('No active tab found');
-    }
-
-    const tab = tabs[0];
     if (!tab?.id) {
-      throw new Error('Invalid tab');
+      throw new Error('No active tab found');
     }
 
     if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('edge://')) {
       throw new Error('Recording not available on browser system pages');
     }
 
-    // Inject content script if not already injected
+    // Inject content script
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         files: ['content-script.js']
       });
+      console.log('Content script injected successfully');
     } catch (error) {
       console.error('Script injection error:', error);
       throw new Error('Failed to initialize recording');
@@ -49,17 +44,21 @@ export const startRecording = async (type) => {
 
     // Start recording with retry mechanism
     let retries = 2;
-    let response;
+    let response = null;
     
     while (retries >= 0 && !response?.success) {
       try {
+        console.log('Attempting to start recording, attempt', 2 - retries);
         response = await chrome.tabs.sendMessage(tab.id, {
           type: 'START_RECORDING'
         });
         
-        if (response?.success) break;
+        if (response?.success) {
+          console.log('Recording started successfully');
+          break;
+        }
         
-        console.log(`Retry attempt ${2 - retries}, response:`, response);
+        console.log('Start recording attempt failed:', response);
         retries--;
         
         if (retries >= 0) {
@@ -69,6 +68,7 @@ export const startRecording = async (type) => {
         console.error('Start recording attempt failed:', error);
         retries--;
         if (retries < 0) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
 

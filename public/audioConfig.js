@@ -12,4 +12,4 @@ export const RECORDER_OPTIONS = {
   audioBitsPerSecond: 128000
 };
 
-export const CHUNK_INTERVAL = 100; // milliseconds
+export const CHUNK_INTERVAL = 1000; // Increased for better stability

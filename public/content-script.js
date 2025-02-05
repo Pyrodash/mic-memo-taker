@@ -8,6 +8,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     START_RECORDING: async () => {
       try {
         await startRecording();
+        console.log('Recording started successfully');
         sendResponse({ success: true });
       } catch (error) {
         console.error('Start recording error:', error);
@@ -36,6 +37,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         pauseRecording();
         sendResponse({ success: true });
       } catch (error) {
+        console.error('Pause recording error:', error);
         sendResponse({ success: false, error: error.message });
       }
       return true;
@@ -46,6 +48,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         resumeRecording();
         sendResponse({ success: true });
       } catch (error) {
+        console.error('Resume recording error:', error);
         sendResponse({ success: false, error: error.message });
       }
       return true;
@@ -56,6 +59,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         cancelRecording();
         sendResponse({ success: true });
       } catch (error) {
+        console.error('Cancel recording error:', error);
         sendResponse({ success: false, error: error.message });
       }
       return true;
@@ -63,6 +67,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   };
 
   const handler = handlers[message.type];
-  if (!handler) return false;
+  if (!handler) {
+    console.error('Unknown message type:', message.type);
+    sendResponse({ success: false, error: 'Unknown message type' });
+    return false;
+  }
   return handler();
 });

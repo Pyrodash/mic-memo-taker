@@ -4,11 +4,14 @@ import { cleanup } from './cleanupUtils.js';
 import { getMediaRecorder, getAudioChunks, setMediaRecorder, setAudioChunks } from './recorderManager.js';
 
 export async function startRecording() {
+  console.log('Starting recording...');
+  
   if (getMediaRecorder()?.state === 'recording') {
     throw new Error('Already recording');
   }
 
   try {
+    console.log('Requesting microphone access...');
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: AUDIO_CONSTRAINTS
     });
@@ -25,6 +28,7 @@ export async function startRecording() {
     return new Promise((resolve, reject) => {
       try {
         const recorder = new MediaRecorder(stream, RECORDER_OPTIONS);
+        console.log('MediaRecorder created with options:', RECORDER_OPTIONS);
 
         recorder.ondataavailable = (event) => {
           if (event.data && event.data.size > 0) {
@@ -46,12 +50,15 @@ export async function startRecording() {
 
         setMediaRecorder(recorder);
         recorder.start(CHUNK_INTERVAL);
+        console.log('MediaRecorder.start() called');
       } catch (error) {
+        console.error('Failed to initialize recorder:', error);
         cleanup();
         reject(new Error('Failed to initialize recorder: ' + error.message));
       }
     });
   } catch (error) {
+    console.error('Failed to access microphone:', error);
     cleanup();
     throw new Error('Failed to access microphone: ' + error.message);
   }
