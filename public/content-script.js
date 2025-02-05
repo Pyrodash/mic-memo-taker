@@ -35,55 +35,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function startRecording() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ 
+    const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         channelCount: 1,
-        sampleRate: 44100,
-        echoCancellation: true,
-        noiseSuppression: true
-      },
-      video: false
+        sampleRate: 48000,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      }
     });
 
-    // Check available MIME types
-    const mimeType = 'audio/webm;codecs=opus';
-    if (!MediaRecorder.isTypeSupported(mimeType)) {
-      throw new Error('Codec not supported');
-    }
-    
-    mediaRecorder = new MediaRecorder(stream, {
-      mimeType: mimeType,
-      audioBitsPerSecond: 128000
+    // Force the audio context sample rate to match our desired rate
+    const audioContext = new AudioContext({ sampleRate: 48000 });
+    const source = audioContext.createMediaStreamSource(stream);
+    const destination = audioContext.createMediaStreamDestination();
+    source.connect(destination);
+
+    mediaRecorder = new MediaRecorder(destination.stream, {
+      mimeType: 'audio/webm',
+      audioBitsPerSecond: 256000 // Increased bitrate for better quality
     });
-    
+
     audioChunks = [];
 
     mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
+      if (event.data && event.data.size > 0) {
         audioChunks.push(event.data);
         console.log('Chunk received:', event.data.size, 'bytes');
       }
     };
 
-    // Request chunks every 1 second to ensure we're getting data
-    mediaRecorder.start(1000);
-    console.log('Recording started with timeslice');
+    // Request smaller chunks more frequently
+    mediaRecorder.start(500);
+    console.log('Recording started with AudioContext processing');
     return true;
   } catch (error) {
     console.error('Error starting recording:', error);
-    throw new Error('Failed to start recording: ' + error.message);
+    cleanup();
+    throw error;
   }
 }
 
 function stopRecording() {
   return new Promise((resolve, reject) => {
-    if (!mediaRecorder) {
-      reject(new Error('No recording in progress'));
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+      cleanup();
+      reject(new Error('No active recording'));
       return;
     }
 
-    const handleStop = () => {
-      console.log('Recorder stopped, chunks:', audioChunks.length);
+    mediaRecorder.onstop = () => {
+      console.log('Recording stopped, processing chunks...');
       
       if (audioChunks.length === 0) {
         cleanup();
@@ -91,55 +93,46 @@ function stopRecording() {
         return;
       }
 
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
-      console.log(`Final recording size: ${audioBlob.size} bytes`);
-      
-      if (audioBlob.size < 1000) {
+      // Create blob from chunks
+      const finalBlob = new Blob(audioChunks, { type: 'audio/webm' });
+      console.log('Final blob size:', finalBlob.size, 'bytes');
+
+      if (finalBlob.size < 1000) {
         cleanup();
-        reject(new Error('Recording too short'));
+        reject(new Error('Recording too short or no audio captured'));
         return;
       }
 
       cleanup();
-      resolve(audioBlob);
+      resolve(finalBlob);
     };
 
-    mediaRecorder.onstop = handleStop;
-
     try {
-      // Ensure we're actually recording before stopping
       if (mediaRecorder.state === 'recording') {
-        mediaRecorder.requestData(); // Request any final chunks
+        mediaRecorder.requestData();
         mediaRecorder.stop();
       } else {
-        handleStop();
+        cleanup();
+        reject(new Error('MediaRecorder not in recording state'));
       }
     } catch (error) {
       cleanup();
-      reject(new Error('Failed to stop recording: ' + error.message));
+      reject(error);
     }
   });
 }
 
 function pauseRecording() {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
-    try {
-      mediaRecorder.pause();
-      console.log('Recording paused');
-    } catch (error) {
-      console.error('Error pausing recording:', error);
-    }
+    mediaRecorder.pause();
+    console.log('Recording paused');
   }
 }
 
 function resumeRecording() {
   if (mediaRecorder && mediaRecorder.state === 'paused') {
-    try {
-      mediaRecorder.resume();
-      console.log('Recording resumed');
-    } catch (error) {
-      console.error('Error resuming recording:', error);
-    }
+    mediaRecorder.resume();
+    console.log('Recording resumed');
   }
 }
 
@@ -153,7 +146,10 @@ function cleanup() {
       if (mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
       }
-      mediaRecorder.stream.getTracks().forEach(track => track.stop());
+      if (mediaRecorder.stream) {
+        const tracks = mediaRecorder.stream.getTracks();
+        tracks.forEach(track => track.stop());
+      }
     } catch (error) {
       console.error('Error during cleanup:', error);
     }
