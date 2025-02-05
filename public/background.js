@@ -1,6 +1,5 @@
 
-let mediaRecorder = null;
-let audioChunks = [];
+let isRecording = false;
 let startTime = 0;
 let isPaused = false;
 let recordingType = null;
@@ -39,31 +38,32 @@ async function handleMessage(msg) {
 
 async function startRecording(type) {
   try {
-    // Request tab access first
+    // Get active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    await chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_MEDIA_ACCESS' });
+    if (!tab?.id) {
+      throw new Error('No active tab found');
+    }
 
-    // Execute content script to get media stream
+    // Inject content script
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      function: async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        return stream;
-      }
+      files: ['content-script.js']
     });
 
-    // Now we can start recording
-    mediaRecorder = new MediaRecorder(stream);
-    audioChunks = [];
+    // Request recording start from content script
+    const response = await chrome.tabs.sendMessage(tab.id, { 
+      type: 'START_RECORDING',
+      recordingType: type
+    });
+
+    if (!response || !response.success) {
+      throw new Error(response?.error || 'Failed to start recording');
+    }
+
+    // Initialize state
     recordingType = type;
     startTime = Date.now();
     isPaused = false;
-
-    mediaRecorder.ondataavailable = (event) => {
-      audioChunks.push(event.data);
-    };
-
-    mediaRecorder.start(1000);
     updateBadge();
     sendState();
   } catch (error) {
@@ -72,25 +72,31 @@ async function startRecording(type) {
   }
 }
 
-function stopRecording() {
-  if (!mediaRecorder) return;
+async function stopRecording() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      throw new Error('No active tab found');
+    }
 
-  return new Promise((resolve) => {
-    mediaRecorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-      
+    const response = await chrome.tabs.sendMessage(tab.id, { type: 'STOP_RECORDING' });
+    if (!response || !response.success) {
+      throw new Error(response?.error || 'Failed to stop recording');
+    }
+
+    if (response.blob) {
       try {
         const webhookUrl = await chrome.storage.local.get('webhookUrl');
         if (webhookUrl.webhookUrl) {
           const formData = new FormData();
-          formData.append('audio', audioBlob);
+          formData.append('audio', response.blob);
           
-          const response = await fetch(`${webhookUrl.webhookUrl}?route=${recordingType}`, {
+          const uploadResponse = await fetch(`${webhookUrl.webhookUrl}?route=${recordingType}`, {
             method: 'POST',
             body: formData,
           });
 
-          if (!response.ok) {
+          if (!uploadResponse.ok) {
             throw new Error('Failed to upload recording');
           }
         }
@@ -98,41 +104,61 @@ function stopRecording() {
         console.error('Error uploading recording:', error);
         port?.postMessage({ type: 'ERROR', error: error.message });
       }
+    }
 
-      cleanup();
-      resolve();
-    };
-
-    mediaRecorder.stop();
-  });
-}
-
-function pauseRecording() {
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.pause();
-    isPaused = true;
-    sendState();
+    cleanup();
+  } catch (error) {
+    console.error('Error stopping recording:', error);
+    port?.postMessage({ type: 'ERROR', error: error.message });
   }
 }
 
-function resumeRecording() {
-  if (mediaRecorder && mediaRecorder.state === 'paused') {
-    mediaRecorder.resume();
-    isPaused = false;
-    sendState();
+async function pauseRecording() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+
+    const response = await chrome.tabs.sendMessage(tab.id, { type: 'PAUSE_RECORDING' });
+    if (response?.success) {
+      isPaused = true;
+      sendState();
+    }
+  } catch (error) {
+    console.error('Error pausing recording:', error);
+    port?.postMessage({ type: 'ERROR', error: error.message });
   }
 }
 
-function cancelRecording() {
-  cleanup();
+async function resumeRecording() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+
+    const response = await chrome.tabs.sendMessage(tab.id, { type: 'RESUME_RECORDING' });
+    if (response?.success) {
+      isPaused = false;
+      sendState();
+    }
+  } catch (error) {
+    console.error('Error resuming recording:', error);
+    port?.postMessage({ type: 'ERROR', error: error.message });
+  }
+}
+
+async function cancelRecording() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+
+    await chrome.tabs.sendMessage(tab.id, { type: 'CANCEL_RECORDING' });
+    cleanup();
+  } catch (error) {
+    console.error('Error canceling recording:', error);
+    port?.postMessage({ type: 'ERROR', error: error.message });
+  }
 }
 
 function cleanup() {
-  if (mediaRecorder) {
-    mediaRecorder.stream.getTracks().forEach(track => track.stop());
-    mediaRecorder = null;
-  }
-  audioChunks = [];
   startTime = 0;
   isPaused = false;
   recordingType = null;
@@ -140,12 +166,27 @@ function cleanup() {
   sendState();
 }
 
+// Listen for messages from content script
+chrome.runtime.onMessage.addListener((message) => {
+  switch (message.type) {
+    case 'RECORDING_STARTED':
+      isRecording = true;
+      updateBadge();
+      break;
+    case 'RECORDING_STOPPED':
+    case 'RECORDING_CANCELLED':
+      isRecording = false;
+      updateBadge();
+      break;
+  }
+});
+
 function sendState() {
   if (port) {
     port.postMessage({
       type: 'STATE_UPDATE',
       state: {
-        isRecording: !!mediaRecorder,
+        isRecording,
         isPaused,
         duration: startTime ? Math.floor((Date.now() - startTime) / 1000) : 0,
         recordingType
@@ -155,7 +196,7 @@ function sendState() {
 }
 
 function updateBadge() {
-  if (mediaRecorder) {
+  if (isRecording) {
     chrome.action.setBadgeText({ text: '🎤' });
     chrome.action.setBadgeBackgroundColor({ color: '#FF0000' });
   } else {
@@ -164,7 +205,7 @@ function updateBadge() {
 }
 
 setInterval(() => {
-  if (mediaRecorder && !isPaused) {
+  if (isRecording && !isPaused) {
     sendState();
   }
 }, 1000);
