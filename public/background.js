@@ -39,7 +39,20 @@ async function handleMessage(msg) {
 
 async function startRecording(type) {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Request tab access first
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    await chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_MEDIA_ACCESS' });
+
+    // Execute content script to get media stream
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      function: async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        return stream;
+      }
+    });
+
+    // Now we can start recording
     mediaRecorder = new MediaRecorder(stream);
     audioChunks = [];
     recordingType = type;
