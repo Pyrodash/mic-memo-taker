@@ -46,8 +46,8 @@ async function startRecording(type) {
 
     // Check if we can access the tab
     const url = new URL(tab.url);
-    if (url.protocol === 'chrome:' || url.protocol === 'edge:') {
-      throw new Error('Recording is not supported on browser system pages');
+    if (!url.protocol.startsWith('http')) {
+      throw new Error('Recording is only supported on web pages');
     }
 
     // Inject content script
