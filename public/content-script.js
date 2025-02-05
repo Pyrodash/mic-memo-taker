@@ -20,11 +20,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     STOP_RECORDING: () => {
       stopRecording()
         .then(blob => {
-          console.log('Recording stopped successfully:', {
-            size: blob.size,
-            type: blob.type
-          });
-          sendResponse({ success: true, blob });
+          // Convert blob to base64
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64data = reader.result.split(',')[1];
+            console.log('Recording stopped successfully:', {
+              size: blob.size,
+              type: blob.type,
+              base64Length: base64data.length
+            });
+            sendResponse({ 
+              success: true, 
+              blobData: {
+                data: base64data,
+                type: blob.type,
+                size: blob.size
+              }
+            });
+          };
+          reader.readAsDataURL(blob);
         })
         .catch(error => {
           console.error('Stop recording error:', error);

@@ -50,21 +50,29 @@ export const stopRecording = async () => {
       type: 'STOP_RECORDING' 
     });
 
-    if (!response?.success || !response.blob) {
+    if (!response?.success || !response.blobData) {
       throw new Error(response?.error || 'Failed to stop recording');
     }
 
     console.log('Stop recording blob:', {
-      size: response.blob.size,
-      type: response.blob.type
+      size: response.blobData.size,
+      type: response.blobData.type
     });
 
-    if (response.blob.size <= 44) {
+    if (response.blobData.size <= 44) {
       throw new Error('Invalid audio data received');
     }
 
     try {
-      await uploadToWebhook(response.blob, recordingState.recordingType);
+      // Convert base64 back to blob
+      const binaryStr = atob(response.blobData.data);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: response.blobData.type });
+      
+      await uploadToWebhook(blob, recordingState.recordingType);
     } catch (error) {
       console.error('Upload error:', error);
       broadcastToAllPorts({ type: 'ERROR', error: error.message });

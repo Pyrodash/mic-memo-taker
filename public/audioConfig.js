@@ -12,4 +12,4 @@ export const RECORDER_OPTIONS = {
 };
 
 // Use smaller chunks for more frequent data collection
-export const CHUNK_INTERVAL = 500; // 500ms chunks for better data collection
+export const CHUNK_INTERVAL = 100; // 100ms chunks for more frequent data collection

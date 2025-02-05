@@ -34,10 +34,33 @@ export async function startRecording() {
     setAudioChunks([]);
     
     recorder.ondataavailable = (event) => {
+      console.log('ondataavailable event fired:', {
+        eventSize: event.data.size,
+        eventType: event.data.type,
+        recorderState: recorder.state,
+        timestamp: new Date().toISOString()
+      });
       if (event.data.size > 0) {
         console.log('Chunk received:', event.data.size, 'bytes');
         getAudioChunks().push(event.data);
+        console.log('Total chunks:', getAudioChunks().length, 'Total size:', getAudioChunks().reduce((acc, chunk) => acc + chunk.size, 0));
       }
+    };
+
+    recorder.onstart = () => {
+      console.log('MediaRecorder started:', {
+        state: recorder.state,
+        mimeType: recorder.mimeType,
+        timestamp: new Date().toISOString()
+      });
+    };
+
+    recorder.onerror = (event) => {
+      console.error('MediaRecorder error:', {
+        error: event.error,
+        state: recorder.state,
+        timestamp: new Date().toISOString()
+      });
     };
 
     recorder.start(CHUNK_INTERVAL);
