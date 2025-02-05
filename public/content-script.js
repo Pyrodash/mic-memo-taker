@@ -41,7 +41,7 @@ async function startRecording() {
     });
     
     mediaRecorder = new MediaRecorder(stream, {
-      mimeType: 'audio/webm'
+      mimeType: 'audio/webm;codecs=opus'
     });
     
     audioChunks = [];
@@ -52,7 +52,8 @@ async function startRecording() {
       }
     };
 
-    mediaRecorder.start(1000);
+    // Start without a timeslice for a single final chunk once stopped
+    mediaRecorder.start();
     return true;
   } catch (error) {
     console.error('Error starting recording:', error);
@@ -67,10 +68,43 @@ function stopRecording() {
       return;
     }
 
-    mediaRecorder.onstop = () => {
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-      cleanup();
-      resolve(audioBlob);
+    mediaRecorder.onstop = async () => {
+      // Wait for any final chunks
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      if (audioChunks.length === 0) {
+        cleanup();
+        reject(new Error('No audio data recorded'));
+        return;
+      }
+
+      // Create and verify the blob
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+      if (audioBlob.size < 1000) {
+        cleanup();
+        reject(new Error('Recording too short or empty'));
+        return;
+      }
+
+      console.log(`Final recording size: ${audioBlob.size} bytes`);
+      
+      // Test if the audio is valid
+      const testUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(testUrl);
+      
+      try {
+        await audio.play();
+        // If we get here, audio is valid
+        audio.pause();
+        URL.revokeObjectURL(testUrl);
+        cleanup();
+        resolve(audioBlob);
+      } catch (error) {
+        console.error('Invalid audio recording:', error);
+        cleanup();
+        URL.revokeObjectURL(testUrl);
+        reject(new Error('Invalid audio recording'));
+      }
     };
 
     try {

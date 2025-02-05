@@ -1,15 +1,32 @@
 
-let isRecording = false;
-let startTime = 0;
-let isPaused = false;
-let recordingType = null;
-let port = null;
+let recordingState = {
+  isRecording: false,
+  isPaused: false,
+  startTime: null,
+  lastStateUpdate: Date.now(),
+  tabId: null,
+  recordingType: null
+};
 
-chrome.runtime.onConnect.addListener(function(p) {
-  port = p;
+const activePorts = new Set();
+
+chrome.runtime.onConnect.addListener(function(port) {
+  // Send initial state
+  port.postMessage({
+    type: 'STATE_UPDATE',
+    state: {
+      isRecording: recordingState.isRecording,
+      isPaused: recordingState.isPaused,
+      duration: recordingState.startTime ? Math.floor((Date.now() - recordingState.startTime) / 1000) : 0,
+      recordingType: recordingState.recordingType
+    }
+  });
+  
+  // Keep reference to port for updates
+  activePorts.add(port);
   port.onMessage.addListener(handleMessage);
   port.onDisconnect.addListener(() => {
-    port = null;
+    activePorts.delete(port);
   });
 });
 
@@ -79,10 +96,11 @@ async function startRecording(type) {
       throw new Error(response?.error || 'Failed to start recording');
     }
 
-    recordingType = type;
-    startTime = Date.now();
-    isPaused = false;
-    isRecording = true;
+    recordingState.recordingType = type;
+    recordingState.startTime = Date.now();
+    recordingState.isPaused = false;
+    recordingState.isRecording = true;
+    recordingState.tabId = tab.id;
     updateBadge();
     sendState();
   } catch (error) {
@@ -119,10 +137,13 @@ async function stopRecording() {
       try {
         const webhookUrl = await chrome.storage.local.get('webhookUrl');
         if (webhookUrl.webhookUrl) {
-          const formData = new FormData();
-          formData.append('audio', response.blob);
+          // Wrap the blob in a File, giving it a name and MIME type
+          const audioFile = new File([response.blob], "recording.webm", { type: "audio/webm" });
 
-          const uploadResponse = await fetch(`${webhookUrl.webhookUrl}?route=${recordingType}`, {
+          const formData = new FormData();
+          formData.append('audio', audioFile);
+
+          const uploadResponse = await fetch(`${webhookUrl.webhookUrl}?route=${recordingState.recordingType}`, {
             method: 'POST',
             body: formData,
           });
@@ -161,7 +182,7 @@ async function pauseRecording() {
 
     const response = await chrome.tabs.sendMessage(tab.id, { type: 'PAUSE_RECORDING' });
     if (response?.success) {
-      isPaused = true;
+      recordingState.isPaused = true;
       sendState();
     }
   } catch (error) {
@@ -187,7 +208,7 @@ async function resumeRecording() {
 
     const response = await chrome.tabs.sendMessage(tab.id, { type: 'RESUME_RECORDING' });
     if (response?.success) {
-      isPaused = false;
+      recordingState.isPaused = false;
       sendState();
     }
   } catch (error) {
@@ -220,16 +241,17 @@ async function cancelRecording() {
 }
 
 function cleanup() {
-  startTime = 0;
-  isPaused = false;
-  isRecording = false;
-  recordingType = null;
+  recordingState.startTime = null;
+  recordingState.isPaused = false;
+  recordingState.isRecording = false;
+  recordingState.recordingType = null;
+  recordingState.tabId = null;
   updateBadge();
   sendState();
 }
 
 function updateBadge() {
-  if (isRecording) {
+  if (recordingState.isRecording) {
     chrome.action.setBadgeText({ text: '🎤' });
     chrome.action.setBadgeBackgroundColor({ color: '#FF0000' });
   } else {
@@ -238,21 +260,24 @@ function updateBadge() {
 }
 
 function sendState() {
-  if (port) {
+  const state = {
+    isRecording: recordingState.isRecording,
+    isPaused: recordingState.isPaused,
+    duration: recordingState.startTime ? Math.floor((Date.now() - recordingState.startTime) / 1000) : 0,
+    recordingType: recordingState.recordingType
+  };
+
+  // Send to all active ports
+  activePorts.forEach(port => {
     port.postMessage({
       type: 'STATE_UPDATE',
-      state: {
-        isRecording,
-        isPaused,
-        duration: startTime ? Math.floor((Date.now() - startTime) / 1000) : 0,
-        recordingType
-      }
+      state
     });
-  }
+  });
 }
 
 setInterval(() => {
-  if (isRecording && !isPaused) {
+  if (recordingState.isRecording && !recordingState.isPaused) {
     sendState();
   }
 }, 1000);
