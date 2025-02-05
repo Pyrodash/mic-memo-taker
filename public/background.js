@@ -93,9 +93,21 @@ async function startRecording(type) {
 
 async function stopRecording() {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    // Get the current window first
+    const currentWindow = await chrome.windows.getCurrent();
+    if (!currentWindow?.id) {
+      throw new Error('Could not determine current window');
+    }
+
+    // Then query for the active tab in that specific window
+    const tabs = await chrome.tabs.query({
+      active: true,
+      windowId: currentWindow.id
+    });
+
+    const tab = tabs[0];
     if (!tab?.id) {
-      throw new Error('No active tab found');
+      throw new Error('No active tab found. Please ensure you are on a web page.');
     }
 
     const response = await chrome.tabs.sendMessage(tab.id, { type: 'STOP_RECORDING' });
@@ -109,7 +121,7 @@ async function stopRecording() {
         if (webhookUrl.webhookUrl) {
           const formData = new FormData();
           formData.append('audio', response.blob);
-          
+
           const uploadResponse = await fetch(`${webhookUrl.webhookUrl}?route=${recordingType}`, {
             method: 'POST',
             body: formData,
@@ -134,7 +146,17 @@ async function stopRecording() {
 
 async function pauseRecording() {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    // Get the current window first
+    const currentWindow = await chrome.windows.getCurrent();
+    if (!currentWindow?.id) return;
+
+    // Then query for the active tab in that specific window
+    const tabs = await chrome.tabs.query({
+      active: true,
+      windowId: currentWindow.id
+    });
+
+    const tab = tabs[0];
     if (!tab?.id) return;
 
     const response = await chrome.tabs.sendMessage(tab.id, { type: 'PAUSE_RECORDING' });
@@ -150,7 +172,17 @@ async function pauseRecording() {
 
 async function resumeRecording() {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    // Get the current window first
+    const currentWindow = await chrome.windows.getCurrent();
+    if (!currentWindow?.id) return;
+
+    // Then query for the active tab in that specific window
+    const tabs = await chrome.tabs.query({
+      active: true,
+      windowId: currentWindow.id
+    });
+
+    const tab = tabs[0];
     if (!tab?.id) return;
 
     const response = await chrome.tabs.sendMessage(tab.id, { type: 'RESUME_RECORDING' });
@@ -166,7 +198,17 @@ async function resumeRecording() {
 
 async function cancelRecording() {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    // Get the current window first
+    const currentWindow = await chrome.windows.getCurrent();
+    if (!currentWindow?.id) return;
+
+    // Then query for the active tab in that specific window
+    const tabs = await chrome.tabs.query({
+      active: true,
+      windowId: currentWindow.id
+    });
+
+    const tab = tabs[0];
     if (!tab?.id) return;
 
     await chrome.tabs.sendMessage(tab.id, { type: 'CANCEL_RECORDING' });
