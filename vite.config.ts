@@ -27,9 +27,11 @@ export default defineConfig(({ mode }) => ({
         background: path.resolve(__dirname, 'public/background.js')
       },
       output: {
-        entryFileNames: '[name].js',
-        chunkFileNames: '[name].js',
-        assetFileNames: '[name].[ext]'
+        entryFileNames: (chunkInfo) => {
+          return chunkInfo.name === 'background' ? '[name].js' : 'assets/[name]-[hash].js';
+        },
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash][extname]'
       }
     }
   }
