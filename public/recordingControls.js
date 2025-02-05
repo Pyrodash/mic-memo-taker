@@ -17,14 +17,20 @@ export const startRecording = async (type) => {
       throw new Error('Recording already in progress');
     }
 
+    // Query for current window first
+    const windows = await chrome.windows.getCurrent();
     const tabs = await chrome.tabs.query({
       active: true,
-      currentWindow: true
+      windowId: windows.id
     });
+
+    if (!tabs || tabs.length === 0) {
+      throw new Error('No active tab found');
+    }
 
     const tab = tabs[0];
     if (!tab?.id) {
-      throw new Error('No active tab found');
+      throw new Error('Invalid tab');
     }
 
     if (tab.url?.startsWith('chrome://') || tab.url?.startsWith('edge://')) {
@@ -181,3 +187,4 @@ export const cancelRecording = async () => {
     broadcastToAllPorts({ type: 'ERROR', error: error.message });
   }
 };
+
