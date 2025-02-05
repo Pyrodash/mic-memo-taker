@@ -9,6 +9,8 @@ export async function startRecording() {
     throw new Error('Already recording');
   }
 
+  cleanup();
+  
   try {
     console.log('Requesting microphone access...');
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -22,56 +24,30 @@ export async function startRecording() {
 
     console.log('Audio stream obtained:', audioTrack.getSettings());
     
+    const recorder = new MediaRecorder(stream, {
+      ...RECORDER_OPTIONS,
+      audioBitsPerSecond: 128000
+    });
+    console.log('MediaRecorder created with options:', RECORDER_OPTIONS);
+    
+    setMediaRecorder(recorder);
     setAudioChunks([]);
     
-    return new Promise((resolve, reject) => {
-      try {
-        const recorder = new MediaRecorder(stream, RECORDER_OPTIONS);
-        console.log('MediaRecorder created with options:', RECORDER_OPTIONS);
-
-        let dataReceived = false;
-
-        recorder.ondataavailable = (event) => {
-          if (event.data && event.data.size > 0) {
-            console.log('Chunk received:', event.data.size, 'bytes');
-            getAudioChunks().push(event.data);
-            dataReceived = true;
-          }
-        };
-
-        recorder.onstart = () => {
-          console.log('MediaRecorder started successfully');
-          resolve(true);
-        };
-
-        recorder.onerror = (error) => {
-          console.error('MediaRecorder error:', error);
-          cleanup();
-          reject(new Error('Recording failed to start: ' + error.message));
-        };
-
-        // Add safety timeout
-        setTimeout(() => {
-          if (!dataReceived) {
-            console.error('No data received within timeout');
-            cleanup();
-            reject(new Error('No audio data received'));
-          }
-        }, CHUNK_INTERVAL * 2);
-
-        setMediaRecorder(recorder);
-        recorder.start(CHUNK_INTERVAL);
-        console.log('MediaRecorder.start() called');
-      } catch (error) {
-        console.error('Failed to initialize recorder:', error);
-        cleanup();
-        reject(new Error('Failed to initialize recorder: ' + error.message));
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        console.log('Chunk received:', event.data.size, 'bytes');
+        getAudioChunks().push(event.data);
       }
-    });
+    };
+
+    recorder.start(CHUNK_INTERVAL);
+    console.log('MediaRecorder.start() called');
+    
+    return true;
   } catch (error) {
-    console.error('Failed to access microphone:', error);
+    console.error('Failed to initialize recording:', error);
     cleanup();
-    throw new Error('Failed to access microphone: ' + error.message);
+    throw error;
   }
 }
 
@@ -89,8 +65,8 @@ export function stopRecording() {
     }
 
     const timeoutId = setTimeout(() => {
-      reject(new Error('Stop recording timeout'));
       cleanup();
+      reject(new Error('Stop recording timeout'));
     }, 5000);
 
     mediaRecorder.onstop = () => {
@@ -98,14 +74,22 @@ export function stopRecording() {
       try {
         const audioChunks = getAudioChunks();
         if (!audioChunks || audioChunks.length === 0) {
+          cleanup();
           reject(new Error('No audio data recorded'));
           return;
         }
 
-        const blob = new Blob(audioChunks, { type: RECORDER_OPTIONS.mimeType });
-        console.log('Final blob created:', blob.size, 'bytes');
+        const blob = new Blob(audioChunks, { 
+          type: 'audio/webm;codecs=opus' 
+        });
+        console.log('Final blob created:', {
+          chunks: audioChunks.length,
+          size: blob.size,
+          type: blob.type
+        });
         
         if (!blob || blob.size <= 44) {
+          cleanup();
           reject(new Error('Invalid audio data'));
           return;
         }
@@ -113,17 +97,25 @@ export function stopRecording() {
         cleanup();
         resolve(blob);
       } catch (error) {
+        console.error('Error processing recording:', error);
         cleanup();
-        reject(new Error('Failed to process recording: ' + error.message));
+        reject(error);
       }
     };
 
     try {
+      // Request final chunk before stopping
+      try {
+        mediaRecorder.requestData();
+      } catch (e) {
+        console.warn('Could not request final data:', e);
+      }
       mediaRecorder.stop();
     } catch (error) {
+      console.error('Error stopping recorder:', error);
       clearTimeout(timeoutId);
       cleanup();
-      reject(new Error('Failed to stop recording: ' + error.message));
+      reject(error);
     }
   });
 }

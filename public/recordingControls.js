@@ -1,4 +1,3 @@
-
 import { recordingState, resetState } from './state.js';
 import { broadcastToAllPorts, sendState } from './portManager.js';
 import { updateBadge } from './badgeManager.js';
@@ -16,35 +15,9 @@ export const startRecording = async (type) => {
 
     await injectContentScript(activeTab.id);
 
-    // Start recording with enhanced retry mechanism
-    let retries = 3;
-    let response = null;
-    
-    while (retries >= 0 && !response?.success) {
-      try {
-        console.log('Attempting to start recording, attempt', 3 - retries);
-        response = await chrome.tabs.sendMessage(activeTab.id, {
-          type: 'START_RECORDING'
-        });
-        
-        if (response?.success) {
-          console.log('Recording started successfully');
-          break;
-        }
-        
-        console.log('Start recording attempt failed:', response);
-        retries--;
-        
-        if (retries >= 0) {
-          await new Promise(resolve => setTimeout(resolve, 1500));
-        }
-      } catch (error) {
-        console.error('Start recording attempt failed:', error);
-        retries--;
-        if (retries < 0) throw error;
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
-    }
+    const response = await chrome.tabs.sendMessage(activeTab.id, {
+      type: 'START_RECORDING'
+    });
 
     if (!response?.success) {
       throw new Error(response?.error || 'Failed to start recording');
@@ -104,6 +77,9 @@ export const stopRecording = async () => {
   } catch (error) {
     console.error('Stop recording error:', error);
     broadcastToAllPorts({ type: 'ERROR', error: error.message });
+    resetState();
+    updateBadge(false);
+    sendState();
   }
 };
 
@@ -157,5 +133,8 @@ export const cancelRecording = async () => {
   } catch (error) {
     console.error('Cancel error:', error);
     broadcastToAllPorts({ type: 'ERROR', error: error.message });
+    resetState();
+    updateBadge(false);
+    sendState();
   }
 };

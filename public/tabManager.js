@@ -13,11 +13,19 @@ export const findActiveTab = async () => {
 
   // Fallback to querying current window if no active tab found
   if (!activeTab) {
-    const [tab] = await chrome.tabs.query({
+    const tabs = await chrome.tabs.query({
       active: true,
-      lastFocusedWindow: true
+      currentWindow: true
     });
-    activeTab = tab;
+    activeTab = tabs[0];
+
+    // If still no active tab, try a broader search
+    if (!activeTab) {
+      const allTabs = await chrome.tabs.query({
+        active: true
+      });
+      activeTab = allTabs[0];
+    }
   }
 
   if (!activeTab?.id) {

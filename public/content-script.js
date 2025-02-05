@@ -1,40 +1,42 @@
-
 import { startRecording, stopRecording, pauseRecording, resumeRecording, cancelRecording } from './recordingOperations.js';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Content script received message:', message);
   
   const handlers = {
-    START_RECORDING: async () => {
-      try {
-        await startRecording();
-        console.log('Recording started successfully');
-        sendResponse({ success: true });
-      } catch (error) {
-        console.error('Start recording error:', error);
-        sendResponse({ success: false, error: error.message });
-      }
+    START_RECORDING: () => {
+      startRecording()
+        .then(() => {
+          console.log('Recording started successfully');
+          sendResponse({ success: true });
+        })
+        .catch(error => {
+          console.error('Start recording error:', error);
+          sendResponse({ success: false, error: error.message });
+        });
       return true; // Keep message channel open for async response
     },
     
-    STOP_RECORDING: async () => {
-      try {
-        const blob = await stopRecording();
-        console.log('Stop recording blob:', {
-          size: blob.size,
-          type: blob.type
+    STOP_RECORDING: () => {
+      stopRecording()
+        .then(blob => {
+          console.log('Recording stopped successfully:', {
+            size: blob.size,
+            type: blob.type
+          });
+          sendResponse({ success: true, blob });
+        })
+        .catch(error => {
+          console.error('Stop recording error:', error);
+          sendResponse({ success: false, error: error.message });
         });
-        sendResponse({ success: true, blob });
-      } catch (error) {
-        console.error('Stop recording error:', error);
-        sendResponse({ success: false, error: error.message });
-      }
       return true;
     },
     
     PAUSE_RECORDING: () => {
       try {
         pauseRecording();
+        console.log('Recording paused');
         sendResponse({ success: true });
       } catch (error) {
         console.error('Pause recording error:', error);
@@ -46,6 +48,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     RESUME_RECORDING: () => {
       try {
         resumeRecording();
+        console.log('Recording resumed');
         sendResponse({ success: true });
       } catch (error) {
         console.error('Resume recording error:', error);
@@ -57,6 +60,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     CANCEL_RECORDING: () => {
       try {
         cancelRecording();
+        console.log('Recording cancelled');
         sendResponse({ success: true });
       } catch (error) {
         console.error('Cancel recording error:', error);

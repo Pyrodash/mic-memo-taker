@@ -1,4 +1,3 @@
-
 export const AUDIO_CONSTRAINTS = {
   channelCount: 1,
   echoCancellation: true,
@@ -12,5 +11,5 @@ export const RECORDER_OPTIONS = {
   audioBitsPerSecond: 128000
 };
 
-export const CHUNK_INTERVAL = 2000; // Increased for better stability
-
+// Use smaller chunks for more frequent data collection
+export const CHUNK_INTERVAL = 500; // 500ms chunks for better data collection
