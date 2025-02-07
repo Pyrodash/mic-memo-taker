@@ -7,7 +7,9 @@
     "tabs",
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "tabCapture",
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -29,13 +31,6 @@
     "48": "icon48.png",
     "128": "icon128.png"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content-script.js"],
-      "type": "module"
-    }
-  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; media-src blob: mediastream:"
   }

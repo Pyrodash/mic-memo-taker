@@ -16,11 +16,21 @@ export const broadcastToAllPorts = (message) => {
   });
 };
 
+export const calculateDuration = () => {
+  let duration = recordingState.totalDuration
+
+  if (!recordingState.isPaused) {
+    duration += Date.now() - recordingState.startTime
+  }
+
+  return Math.floor(duration / 1000)
+}
+
 export const sendState = () => {
   const state = {
     isRecording: recordingState.isRecording,
     isPaused: recordingState.isPaused,
-    duration: recordingState.startTime ? Math.floor((Date.now() - recordingState.startTime) / 1000) : 0,
+    duration: calculateDuration(),
     recordingType: recordingState.recordingType
   };
 

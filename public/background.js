@@ -1,5 +1,5 @@
 import { recordingState } from './state.js';
-import { addPort, sendState } from './portManager.js';
+import { addPort, calculateDuration, sendState } from './portManager.js';
 import { 
   startRecording,
   stopRecording,
@@ -15,7 +15,7 @@ chrome.runtime.onConnect.addListener(function(port) {
     state: {
       isRecording: recordingState.isRecording,
       isPaused: recordingState.isPaused,
-      duration: recordingState.startTime ? Math.floor((Date.now() - recordingState.startTime) / 1000) : 0,
+      duration: calculateDuration(),
       recordingType: recordingState.recordingType
     }
   });

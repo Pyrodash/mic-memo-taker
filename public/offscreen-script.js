@@ -1,11 +1,13 @@
 import { startRecording, stopRecording, pauseRecording, resumeRecording, cancelRecording } from './recordingOperations.js';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Content script received message:', message);
+  if (message.target !== 'offscreen') return
+
+  console.log('Offscreen script received message:', message);
   
   const handlers = {
     START_RECORDING: () => {
-      startRecording()
+      startRecording(message.data)
         .then(() => {
           console.log('Recording started successfully');
           sendResponse({ success: true });

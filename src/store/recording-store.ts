@@ -8,6 +8,7 @@ interface RecordingState {
   recordingType: 'task' | 'note' | null;
   webhookUrl: string;
   port: chrome.runtime.Port | null;
+  acquirePort(): chrome.runtime.Port
   setWebhookUrl: (url: string) => void;
   startRecording: (type: 'task' | 'note') => Promise<void>;
   stopRecording: () => Promise<void>;
@@ -35,45 +36,55 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
     set({ webhookUrl: url });
   },
 
+  acquirePort: () => {
+      let port = get().port;
+      if (!port) {
+        port = chrome.runtime.connect();
+        setupPortListeners(port, set);
+        set({ port });
+      }
+      return port
+  },
+
   startRecording: async (type) => {
     if (!isChromeExtension) {
       console.warn('Recording is only available in Chrome extension context');
       return;
     }
-    let port = get().port;
-    if (!port) {
-      port = chrome.runtime.connect();
-      setupPortListeners(port, set);
-      set({ port });
-    }
+    const port = get().acquirePort()
+
     port.postMessage({ type: 'START_RECORDING', recordingType: type });
   },
 
   stopRecording: async () => {
-    const { port } = get();
-    if (port) {
-      port.postMessage({ type: 'STOP_RECORDING' });
+    const { isRecording, acquirePort } = get()
+
+    if (isRecording) {
+      acquirePort().postMessage({ type: 'STOP_RECORDING' });
     }
   },
 
   pauseRecording: () => {
-    const { port } = get();
-    if (port) {
-      port.postMessage({ type: 'PAUSE_RECORDING' });
+    const { isRecording, acquirePort } = get()
+
+    if (isRecording) {
+      acquirePort().postMessage({ type: 'PAUSE_RECORDING' });
     }
   },
 
   resumeRecording: () => {
-    const { port } = get();
-    if (port) {
-      port.postMessage({ type: 'RESUME_RECORDING' });
+    const { isRecording, acquirePort } = get()
+
+    if (isRecording) {
+      acquirePort().postMessage({ type: 'RESUME_RECORDING' });
     }
   },
 
   cancelRecording: () => {
-    const { port } = get();
-    if (port) {
-      port.postMessage({ type: 'CANCEL_RECORDING' });
+    const { isRecording, acquirePort } = get()
+
+    if (isRecording) {
+      acquirePort().postMessage({ type: 'CANCEL_RECORDING' });
     }
   },
 

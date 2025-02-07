@@ -25,8 +25,8 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       input: {
         index: path.resolve(__dirname, 'index.html'),
+        offscreen: path.resolve(__dirname, 'offscreen.html'),
         background: path.resolve(__dirname, 'public/background.js'),
-        'content-script': path.resolve(__dirname, 'public/content-script.js')
       },
       output: {
         entryFileNames: '[name].js',

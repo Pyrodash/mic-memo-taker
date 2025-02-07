@@ -1,7 +1,7 @@
 import { recordingState, resetState } from './state.js';
 import { broadcastToAllPorts, sendState } from './portManager.js';
 import { updateBadge } from './badgeManager.js';
-import { findActiveTab, injectContentScript } from './tabManager.js';
+import { findActiveTab } from './tabManager.js';
 import { uploadToWebhook } from './webhookManager.js';
 
 export const startRecording = async (type) => {
@@ -10,13 +10,34 @@ export const startRecording = async (type) => {
       throw new Error('Recording already in progress');
     }
 
+    const existingContexts = await chrome.runtime.getContexts({});
+    const offscreenDocument = existingContexts.find(
+      (c) => c.contextType === 'OFFSCREEN_DOCUMENT'
+    );
+
+    // If an offscreen document is not already open, create one.
+    if (!offscreenDocument) {
+      // Create an offscreen document.
+      await chrome.offscreen.createDocument({
+        url: 'offscreen.html',
+        reasons: ['USER_MEDIA'],
+        justification: 'Recording from chrome.tabCapture API',
+      });
+    }
+
     const activeTab = await findActiveTab();
+
     console.log('Found active tab:', activeTab.id);
 
-    await injectContentScript(activeTab.id);
+    // Get a MediaStream for the active tab.
+    const streamId = await chrome.tabCapture.getMediaStreamId({
+      targetTabId: activeTab.id
+    });
 
-    const response = await chrome.tabs.sendMessage(activeTab.id, {
-      type: 'START_RECORDING'
+    const response = await chrome.runtime.sendMessage({
+      type: 'START_RECORDING',
+      target: 'offscreen',
+      data: streamId,
     });
 
     if (!response?.success) {
@@ -46,8 +67,9 @@ export const stopRecording = async () => {
       throw new Error('No active recording');
     }
 
-    const response = await chrome.tabs.sendMessage(recordingState.tabId, { 
-      type: 'STOP_RECORDING' 
+    const response = await chrome.runtime.sendMessage({ 
+      type: 'STOP_RECORDING',
+      target: 'offscreen',
     });
 
     if (!response?.success || !response.blobData) {
@@ -95,12 +117,16 @@ export const pauseRecording = async () => {
   try {
     if (!recordingState.tabId) return;
     
-    const response = await chrome.tabs.sendMessage(recordingState.tabId, {
-      type: 'PAUSE_RECORDING'
+    const response = await chrome.runtime.sendMessage({
+      type: 'PAUSE_RECORDING',
+      target: 'offscreen',
     });
 
     if (response?.success) {
       recordingState.isPaused = true;
+      recordingState.totalDuration += Date.now() - recordingState.startTime;
+
+      console.log(recordingState.totalDuration)
       sendState();
     }
   } catch (error) {
@@ -113,12 +139,15 @@ export const resumeRecording = async () => {
   try {
     if (!recordingState.tabId) return;
     
-    const response = await chrome.tabs.sendMessage(recordingState.tabId, {
-      type: 'RESUME_RECORDING'
+    const response = await chrome.runtime.sendMessage({
+      type: 'RESUME_RECORDING',
+      target: 'offscreen',
     });
 
     if (response?.success) {
       recordingState.isPaused = false;
+      recordingState.startTime = Date.now();
+
       sendState();
     }
   } catch (error) {
@@ -131,8 +160,9 @@ export const cancelRecording = async () => {
   try {
     if (!recordingState.tabId) return;
     
-    await chrome.tabs.sendMessage(recordingState.tabId, {
-      type: 'CANCEL_RECORDING'
+    await chrome.runtime.sendMessage({
+      type: 'CANCEL_RECORDING',
+      target: 'offscreen',
     });
     
     resetState();
