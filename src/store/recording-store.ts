@@ -1,4 +1,5 @@
 
+import { checkMicPermission } from '@/lib/utils';
 import { create } from 'zustand';
 
 interface RecordingState {
@@ -51,6 +52,22 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
       console.warn('Recording is only available in Chrome extension context');
       return;
     }
+
+    const hasMicPerm = await checkMicPermission()
+
+    if (!hasMicPerm) {
+        chrome.windows.create({
+          url: chrome.runtime.getURL("index.html#/permission"),
+          type: "popup",
+          width: 500,
+          height: 250,
+          left: screen.width - 800,
+          top: 100
+        });
+
+        return;
+    }
+
     const port = get().acquirePort()
 
     port.postMessage({ type: 'START_RECORDING', recordingType: type });
